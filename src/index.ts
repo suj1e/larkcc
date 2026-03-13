@@ -1,4 +1,4 @@
- #!/usr/bin/env node
+#!/usr/bin/env node
 import "process";
 import { program } from "commander";
 import chalk from "chalk";

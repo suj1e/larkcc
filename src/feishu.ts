@@ -33,7 +33,7 @@ export async function updateText(
 ): Promise<void> {
   await client.im.message.patch({
     path: { message_id: msgId },
-    data: { msg_type: "text", content: JSON.stringify({ text }) },
+    data: { content: JSON.stringify({ text }) },
   });
 }
 
@@ -46,7 +46,7 @@ export async function updateCard(
   const card = buildMarkdownCard(markdown);
   await client.im.message.patch({
     path: { message_id: msgId },
-    data: { msg_type: "interactive", content: JSON.stringify(card) },
+    data: { content: JSON.stringify(card) },
   });
 }
 
@@ -92,7 +92,7 @@ export async function updateToolCard(
   const card = buildMarkdownCard(content);
   await client.im.message.patch({
     path: { message_id: msgId },
-    data: { msg_type: "interactive", content: JSON.stringify(card) },
+    data: { content: JSON.stringify(card) },
   });
 }
 
