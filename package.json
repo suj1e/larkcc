@@ -12,7 +12,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code-agent": "latest",
+    "@anthropic-ai/claude-agent-sdk": "latest",
     "@larksuiteoapi/node-sdk": "^1",
     "commander": "^12",
     "js-yaml": "^4",
