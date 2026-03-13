@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { execSync } from "child_process";
 import { createLarkClient, createWSClient, sendText } from "./feishu.js";
-import { runAgent } from "./agent.js";
+import { runAgent, ensureEnv } from "./agent.js";
 import { LarkccConfig } from "./config.js";
 import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
@@ -83,6 +83,7 @@ export async function startApp(
   const { app_id, app_secret, owner_open_id } = config.feishu;
 
   // 启动时自动找 claude
+  ensureEnv();
   ensureClaudeInPath();
 
   const client   = createLarkClient(app_id, app_secret);

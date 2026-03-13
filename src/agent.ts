@@ -1,4 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import os from "os";
+import { execSync } from "child_process";
 import * as lark from "@larksuiteoapi/node-sdk";
 import {
   sendText,
@@ -138,10 +140,25 @@ export async function runAgent(
 
       if (textBuffer) {
         if (!textMsgId) textMsgId = await sendText(client, chatId, "...");
-        await sendFinalCard(client, chatId, textMsgId, textBuffer);
+        await sendFinalCard(client, chatId, textBuffer);
       }
 
       logger.reply(chatId);
     }
   }
+}
+
+// 确保子进程能读到 ~/.claude/ 登录态
+export function ensureEnv(): void {
+  // 补全 HOME，确保 claude 能找到 ~/.claude/settings.json
+  if (!process.env.HOME) {
+    process.env.HOME = os.homedir();
+  }
+  // 补全 PATH：从 shell 里读完整的 PATH
+  try {
+    const shellPath = execSync("bash -lc 'echo $PATH' 2>/dev/null", {
+      timeout: 3000,
+    }).toString().trim();
+    if (shellPath) process.env.PATH = shellPath;
+  } catch {}
 }
