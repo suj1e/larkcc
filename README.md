@@ -62,6 +62,12 @@ export LARKCC_OWNER_OPEN_ID=ou_xxxxxxxx
 4. Event subscriptions → enable **Use WebSocket** → subscribe to `im.message.receive_v1`
 5. Get your Open ID: send any message to the bot, check logs for your open_id
 
+## Dependencies
+
+- `@anthropic-ai/claude-code-agent`: Claude Code Agent SDK
+- `@larksuiteoapi/node-sdk`: Feishu/Lark official SDK
+- Requires Claude CLI installed globally (`npm install -g @anthropic-ai/claude-code`)
+
 ## Commands
 
 ```bash

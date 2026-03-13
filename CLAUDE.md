@@ -34,8 +34,12 @@ src/
 1. `index.ts` parses CLI, loads config, calls `startApp()`
 2. `app.ts` creates Lark WS client, listens for `im.message.receive_v1`
 3. Only responds to `owner_open_id` (single-user design)
-4. Messages dispatched to `agent.ts` which calls `@anthropic-ai/claude-code` query()
-5. Agent events (assistant text, tool_use, tool_result) are pushed back to Feishu as cards
+4. Messages dispatched to `agent.ts` which calls `@anthropic-ai/claude-agent-sdk` query()
+5. Agent events processed:
+   - `assistant` event: contains text blocks and tool_use blocks in content
+   - `user` event: contains tool_result blocks in content
+   - `result` event: final completion with session_id
+6. Events are pushed back to Feishu as interactive cards
 
 ### Config Priority
 
@@ -43,6 +47,6 @@ src/
 
 ## Dependencies
 
-- `@anthropic-ai/claude-code`: Claude Code SDK
+- `@anthropic-ai/claude-code-agent`: Claude Code Agent SDK (imports as `@anthropic-ai/claude-agent-sdk`)
 - `@larksuiteoapi/node-sdk`: Feishu/Lark official SDK
 - Requires Claude CLI installed globally (`npm install -g @anthropic-ai/claude-code`)
