@@ -19,10 +19,10 @@ pnpm start        # Run compiled code
 
 ```
 src/
-├── index.ts    # CLI entry (commander), handles --setup, --reset-session, -d daemon
+├── index.ts    # CLI entry (commander), handles --setup, --reset-session, --whoami, -d daemon
 ├── app.ts      # WebSocket listener for Feishu messages, serial dispatch to agent
 ├── agent.ts    # Claude Code SDK event loop, throttled message updates to Feishu
-├── feishu.ts   # Lark API: send/update text & interactive cards
+├── feishu.ts   # Lark API: send/update text & interactive cards, create clients
 ├── config.ts   # Config loading: global < env < project (.larkcc.yml)
 ├── session.ts  # Claude session ID persistence for conversation continuity
 ├── setup.ts    # Interactive first-run config wizard
@@ -41,12 +41,40 @@ src/
    - `result` event: final completion with session_id
 6. Events are pushed back to Feishu as interactive cards
 
+### Message Handling (agent.ts)
+
+- **Text blocks**: Buffered and flushed every 300ms to simulate streaming
+- **Tool calls**: Each tool_use gets its own card with label + detail
+- **Tool results**: Update corresponding card with collapsible preview
+- **Final result**: Replace text message with Markdown interactive card
+
+### Tool Labels (agent.ts)
+
+```typescript
+const TOOL_LABELS = {
+  Read:  "📂 读取文件",
+  Write: "✏️  写入文件",
+  Edit:  "✏️  编辑文件",
+  Bash:  "⚡ 执行命令",
+  Glob:  "🔍 查找文件",
+  Grep:  "🔎 搜索内容",
+  LS:    "📁 列出目录",
+};
+```
+
+### Feishu Cards (feishu.ts)
+
+- `sendText()` / `updateText()`: Plain text messages
+- `updateCard()`: Replace with Markdown interactive card
+- `sendToolCard()` / `updateToolCard()`: Tool execution cards with status and collapsible results
+- Cards use schema 2.0 with markdown element
+
 ### Config Priority
 
 `.larkcc.yml` (project) > `LARKCC_*` env vars > `~/.larkcc/config.yml` (global)
 
 ## Dependencies
 
-- `@anthropic-ai/claude-code-agent`: Claude Code Agent SDK (imports as `@anthropic-ai/claude-agent-sdk`)
+- `@anthropic-ai/claude-agent-sdk`: Claude Code Agent SDK
 - `@larksuiteoapi/node-sdk`: Feishu/Lark official SDK
 - Requires Claude CLI installed globally (`npm install -g @anthropic-ai/claude-code`)
