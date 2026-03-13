@@ -12,14 +12,11 @@ CYAN='\033[0;36m'
 GRAY='\033[0;37m'
 NC='\033[0m'
 
-info() { echo -e "${CYAN}ℹ${NC}  $1"; }
+info()    { echo -e "${CYAN}ℹ${NC}  $1"; }
 success() { echo -e "${GREEN}✅${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
-error() {
-  echo -e "${RED}❌${NC} $1"
-  exit 1
-}
-dim() { echo -e "${GRAY}   $1${NC}"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $1"; }
+error()   { echo -e "${RED}❌${NC} $1"; exit 1; }
+dim()     { echo -e "${GRAY}   $1${NC}"; }
 
 echo ""
 echo -e "${CYAN}  larkcc installer${NC}"

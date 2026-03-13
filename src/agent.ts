@@ -3,7 +3,7 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import {
   sendText,
   updateText,
-  updateCard,
+  sendFinalCard,
   sendToolCard,
   updateToolCard,
 } from "./feishu.js";
@@ -138,7 +138,7 @@ export async function runAgent(
 
       if (textBuffer) {
         if (!textMsgId) textMsgId = await sendText(client, chatId, "...");
-        await updateCard(client, textMsgId, textBuffer);
+        await sendFinalCard(client, chatId, textMsgId, textBuffer);
       }
 
       logger.reply(chatId);
