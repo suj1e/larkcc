@@ -1,0 +1,28 @@
+{
+  "name": "larkcc",
+  "version": "0.1.0",
+  "description": "Claude Code in Feishu - chat with Claude via Lark bot",
+  "type": "module",
+  "bin": {
+    "larkcc": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "latest",
+    "@larksuiteoapi/node-sdk": "^1",
+    "commander": "^12",
+    "js-yaml": "^4",
+    "ora": "^8",
+    "chalk": "^5"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5",
+    "@types/node": "^22",
+    "@types/js-yaml": "^4"
+  }
+}
