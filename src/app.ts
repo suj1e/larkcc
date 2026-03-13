@@ -2,6 +2,7 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { execSync } from "child_process";
 import { createLarkClient, createWSClient, sendText } from "./feishu.js";
 import { runAgent } from "./agent.js";
 import { LarkccConfig } from "./config.js";
@@ -9,6 +10,50 @@ import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 
 const STATE_PATH = path.join(os.homedir(), ".larkcc", "state.json");
+
+// 自动探测 claude 路径，补进 PATH 让 SDK 子进程能找到
+function ensureClaudeInPath(): void {
+  const commonPaths = [
+    "/usr/local/bin",
+    "/usr/bin",
+    `${os.homedir()}/.npm-global/bin`,
+    `${os.homedir()}/.local/bin`,
+    "/opt/homebrew/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+  ];
+
+  // 先用 shell which 探测（最准，能读到用户的完整 PATH）
+  try {
+    const claudePath = execSync("which claude 2>/dev/null || command -v claude 2>/dev/null", {
+      shell: "/bin/bash",
+      env: { ...process.env, PATH: [...commonPaths, process.env.PATH ?? ""].join(":") },
+    }).toString().trim();
+
+    if (claudePath) {
+      const dir = path.dirname(claudePath);
+      if (!process.env.PATH?.includes(dir)) {
+        process.env.PATH = `${dir}:${process.env.PATH}`;
+      }
+      logger.dim(`claude found: ${claudePath}`);
+      return;
+    }
+  } catch {}
+
+  // fallback：扫常见目录
+  for (const dir of commonPaths) {
+    if (fs.existsSync(path.join(dir, "claude"))) {
+      if (!process.env.PATH?.includes(dir)) {
+        process.env.PATH = `${dir}:${process.env.PATH}`;
+      }
+      logger.dim(`claude found: ${dir}/claude`);
+      return;
+    }
+  }
+
+  logger.warn("claude CLI not found — make sure it's installed: npm install -g @anthropic-ai/claude-code");
+}
+
+// ── 持久化 chat_id ────────────────────────────────────────────
 
 function loadChatId(): string | null {
   try {
@@ -28,12 +73,17 @@ function saveChatId(chatId: string): void {
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
 }
 
+// ── 主逻辑 ────────────────────────────────────────────────────
+
 export async function startApp(
   cwd: string,
   config: LarkccConfig,
-  continueSession = false   // --continue flag
+  continueSession = false
 ): Promise<void> {
   const { app_id, app_secret, owner_open_id } = config.feishu;
+
+  // 启动时自动找 claude
+  ensureClaudeInPath();
 
   const client   = createLarkClient(app_id, app_secret);
   const wsClient = createWSClient(app_id, app_secret);
@@ -45,7 +95,7 @@ export async function startApp(
   if (continueSession) {
     const savedSession = getSession(true);
     if (savedSession) {
-      setSession(savedSession); // 写入内存
+      setSession(savedSession);
       logger.info(`Resuming session: ${savedSession}`);
     } else {
       logger.warn("No saved session found, starting fresh");
@@ -107,7 +157,6 @@ export async function startApp(
   logger.success("Feishu connected! Waiting for messages...");
   logger.dim("Press Ctrl+C to stop\n");
 
-  // 连接成功通知
   if (knownChatId) {
     const sessionNote = continueSession ? "（续接上次对话）" : "（新会话）";
     await sendText(client, knownChatId, `✅ larkcc 已连接 ${sessionNote}\n📁 当前项目：\`${cwd}\``);
