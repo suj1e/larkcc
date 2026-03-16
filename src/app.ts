@@ -155,7 +155,7 @@ export async function startApp(
         const msg      = data.message;
         const senderId = data.sender.sender_id?.open_id ?? "";
 
-        if (msg.message_type !== "text") return;
+        if (!["text", "post"].includes(msg.message_type)) return;
 
         // 忽略启动前的消息（长连接重连后会重推历史未 ACK 消息）
         const msgTimestamp = Number(msg.create_time);
@@ -166,7 +166,7 @@ export async function startApp(
         }
 
         // 去重：30s 内相同发送者+内容只处理一次（防飞书重试）
-        const dedupeKey = `${senderId}:${msg.content}`;
+        const dedupeKey = `${senderId}:${msg.message_id}`;
         const lastSeen = recentMessages.get(dedupeKey);
         if (lastSeen && now - lastSeen < 30_000) return;
         recentMessages.set(dedupeKey, now);
@@ -182,7 +182,15 @@ export async function startApp(
         }
 
         const chatId = msg.chat_id;
-        const text   = (JSON.parse(msg.content) as { text?: string }).text?.trim();
+        // 解析消息内容：text 直接取，post（富文本）提取纯文字
+        let text = "";
+        if (msg.message_type === "text") {
+          text = (JSON.parse(msg.content) as { text?: string }).text?.trim() ?? "";
+        } else if (msg.message_type === "post") {
+          const post = JSON.parse(msg.content) as { zh_cn?: { content?: Array<Array<{ tag: string; text?: string }>> } };
+          const blocks = post.zh_cn?.content ?? [];
+          text = blocks.flatMap(line => line.map(el => el.text ?? "")).join("\n").trim();
+        }
         if (!text) return;
 
         // 首次收到消息，记住 chat_id
