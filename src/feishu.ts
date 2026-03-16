@@ -27,21 +27,20 @@ export async function sendText(
   return res.data?.message_id ?? "";
 }
 
-// 回复消息（带 reply_in_thread，所有 Claude 响应都用这个）
+// 回复消息（用 reply 接口，带引用标记）
 export async function replyText(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   text: string
 ): Promise<string> {
-  const res = await client.im.message.create({
-    params: { receive_id_type: "chat_id" },
+  const res = await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
     data: {
-      receive_id: chatId,
-      msg_type: "text",
       content: JSON.stringify({ text }),
-      quote_message_id: rootMsgId,
-    } as any,
+      msg_type: "text",
+      reply_in_thread: false,
+    },
   });
   return res.data?.message_id ?? "";
 }
@@ -57,7 +56,7 @@ export async function updateText(
   });
 }
 
-// 最终回复卡片（带 thread）
+// 最终回复卡片（用 reply 接口，带引用标记）
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
@@ -65,18 +64,17 @@ export async function replyFinalCard(
   markdown: string
 ): Promise<void> {
   const card = buildMarkdownCard(markdown);
-  await client.im.message.create({
-    params: { receive_id_type: "chat_id" },
+  await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
     data: {
-      receive_id: chatId,
-      msg_type: "interactive",
       content: JSON.stringify(card),
-      quote_message_id: rootMsgId,
-    } as any,
+      msg_type: "interactive",
+      reply_in_thread: false,
+    },
   });
 }
 
-// 工具调用卡片（带 thread）
+// 工具调用卡片（用 reply 接口，带引用标记）
 export async function sendToolCard(
   client: lark.Client,
   chatId: string,
@@ -88,14 +86,13 @@ export async function sendToolCard(
   const statusIcon = status === "running" ? "⏳ 进行中..." : status === "done" ? "✅ 完成" : "❌ 失败";
   const content = `${label}\n\`${detail}\`\n${statusIcon}`;
   const card = buildMarkdownCard(content);
-  const res = await client.im.message.create({
-    params: { receive_id_type: "chat_id" },
+  const res = await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
     data: {
-      receive_id: chatId,
-      msg_type: "interactive",
       content: JSON.stringify(card),
-      quote_message_id: rootMsgId,
-    } as any,
+      msg_type: "interactive",
+      reply_in_thread: false,
+    },
   });
   return res.data?.message_id ?? "";
 }
