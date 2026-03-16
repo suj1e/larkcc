@@ -10,6 +10,42 @@ import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 
 const STATE_PATH = path.join(os.homedir(), ".larkcc", "state.json");
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
+
+// 从 ~/.claude/settings.json 注入 env 块，确保子进程继承认证配置
+function injectClaudeEnv(): void {
+  try {
+    if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return;
+    const settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, "utf8"));
+    const env = settings?.env ?? {};
+    for (const [key, value] of Object.entries(env)) {
+      if (!process.env[key]) {
+        process.env[key] = String(value);
+      }
+    }
+    logger.dim(`injected ${Object.keys(env).length} env vars from ~/.claude/settings.json`);
+  } catch (err) {
+    logger.warn(`Failed to read ~/.claude/settings.json: ${String(err)}`);
+  }
+}
+
+// 确保 ~/.claude.json 存在且包含 hasCompletedOnboarding，避免 claude 卡在引导流程
+function ensureClaudeOnboarding(): void {
+  const claudeJsonPath = path.join(os.homedir(), ".claude.json");
+  try {
+    let json: Record<string, unknown> = {};
+    if (fs.existsSync(claudeJsonPath)) {
+      json = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
+    }
+    if (!json.hasCompletedOnboarding) {
+      json.hasCompletedOnboarding = true;
+      fs.writeFileSync(claudeJsonPath, JSON.stringify(json, null, 2), "utf8");
+      logger.dim("wrote hasCompletedOnboarding to ~/.claude.json");
+    }
+  } catch (err) {
+    logger.warn(`Failed to write ~/.claude.json: ${String(err)}`);
+  }
+}
 
 // 自动探测 claude 路径，补进 PATH 让 SDK 子进程能找到
 function ensureClaudeInPath(): void {
@@ -83,6 +119,8 @@ export async function startApp(
   const { app_id, app_secret, owner_open_id } = config.feishu;
 
   // 启动时自动找 claude
+  injectClaudeEnv();
+  ensureClaudeOnboarding();
   ensureEnv();
   ensureClaudeInPath();
 
