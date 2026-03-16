@@ -23,24 +23,61 @@ larkcc
 ## 命令
 
 ```bash
-larkcc                  # 启动（前台，新会话）
-larkcc --continue       # 启动，续接上次 Claude 会话
-larkcc -c               # 同上，简写
-larkcc -d               # 后台运行
-larkcc --setup          # 重新配置
-larkcc --reset-session  # 清除已保存的 Claude session
-larkcc --version
+# 启动
+larkcc                        # 默认机器人，新会话
+larkcc --continue             # 默认机器人，续接上次会话
+larkcc -p mybot                 # 用 mybot 机器人
+larkcc -p mybot --continue      # 用 mybot 机器人，续接上次会话
+larkcc -d                     # 后台运行
+
+# 配置
+larkcc --setup                # 配置/更新默认机器人
+larkcc --setup -p mybot         # 配置/更新 mybot 机器人
+larkcc --new-profile          # 新增机器人（引导填写，支持自定义或自动命名）
+larkcc --list-profiles        # 查看所有已配置的机器人
+
+# Session 管理
+larkcc --reset-session        # 清除默认机器人的 session
+larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
+```
+
+## 多机器人支持
+
+每个机器人是一个 profile，按名字区分：
+
+```bash
+# 新增机器人
+larkcc --new-profile
+# ? Feishu App ID: cli_bot_xxx
+# ? Feishu App Secret: xxxxxxxx
+# ? Your Open ID: ou_xxx
+# ? Profile name (blank to auto-generate): mybot
+# ✅ Profile "mybot" saved
+
+# 查看所有机器人
+larkcc --list-profiles
+# Available profiles:
+#   default          cli_a93e...  (default)
+#   mybot              cli_bot_b...
+
+# 使用指定机器人
+larkcc -p mybot
+```
+
+所有状态（session、chat_id）按 profile 隔离：
+```
+~/.larkcc/state.json          # 默认机器人
+~/.larkcc/state-mybot.json      # mybot 机器人
 ```
 
 ## 飞书侧体验
 
-- ✅ 启动时收到连接通知，断开时收到断开通知
+- ✅ 启动时收到连接通知（含 profile 标签），断开时收到断开通知
 - 👌 收到消息立即打 reaction 表示处理中，完成换成 DONE
 - 💬 所有回复引用你的原始消息
 - ⚡ 工具调用实时展示（读文件、执行命令等），完成后更新状态
 - 📋 最终回复用富文本卡片渲染，支持 Markdown + 代码高亮
 - 🔢 支持普通文本消息和富文本（post）消息，标题和正文都会识别
-- 💬 Claude 提问时（AskUserQuestion）直接以卡片形式发给你
 
 ## 消息类型支持
 
@@ -50,18 +87,18 @@ larkcc --version
 | 富文本（大输入框，带标题） | ✅ |
 | 其他类型 | 忽略 |
 
-## 配置
+## 配置文件
 
 全局配置保存在 `~/.larkcc/config.yml`：
 
 ```yaml
-feishu:
+feishu:                        # 默认机器人
   app_id: cli_xxxxxxxx
   app_secret: xxxxxxxxxxxxxxxx
-  owner_open_id: ou_xxxxxxxx   # 只响应此用户的消息
+  owner_open_id: ou_xxxxxxxx
 
 claude:
-  permission_mode: acceptEdits  # 自动接受文件修改
+  permission_mode: acceptEdits
   allowed_tools:
     - Read
     - Write
@@ -70,11 +107,19 @@ claude:
     - Glob
     - Grep
     - LS
+
+profiles:                      # 其他机器人
+  mybot:
+    feishu:
+      app_id: cli_bot_mybot
+      app_secret: xxxxxxxxxxxxxxxx
+      owner_open_id: ou_xxxxxxxx
+  work:
+    feishu:
+      app_id: cli_bot_work
+      app_secret: xxxxxxxxxxxxxxxx
+      owner_open_id: ou_xxxxxxxx
 ```
-
-项目级配置可在项目根目录放 `.larkcc.yml` 覆盖全局配置。
-
-优先级：`.larkcc.yml` > 环境变量 > `~/.larkcc/config.yml`
 
 ### 环境变量
 
@@ -111,19 +156,18 @@ export LARKCC_OWNER_OPEN_ID=ou_xxxxxxxx
 
 ### 获取你的 Open ID
 
-启动 larkcc 后给机器人发任意一条消息，日志中会打印出 `ou_xxx`，填入 `~/.larkcc/config.yml` 的 `owner_open_id`。
+启动 larkcc 后给机器人发任意一条消息，日志中会打印出 `ou_xxx`，填入配置的 `owner_open_id`。
 
 ## 状态文件
 
 | 文件 | 说明 |
 |------|------|
-| `~/.larkcc/config.yml` | 飞书和 Claude 配置 |
-| `~/.larkcc/state.json` | 持久化 chat_id 和 session_id |
+| `~/.larkcc/config.yml` | 飞书和 Claude 配置（含所有 profiles） |
+| `~/.larkcc/state.json` | 默认机器人的 chat_id 和 session_id |
+| `~/.larkcc/state-{profile}.json` | 各 profile 的 chat_id 和 session_id |
 | `~/.claude.json` | Claude onboarding 状态（自动创建） |
 
 ## 工具展示
-
-Claude 调用工具时飞书会实时显示：
 
 | 工具 | 展示 |
 |------|------|
