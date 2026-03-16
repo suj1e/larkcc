@@ -187,13 +187,13 @@ export async function startApp(
         if (msg.message_type === "text") {
           text = (JSON.parse(msg.content) as { text?: string }).text?.trim() ?? "";
         } else if (msg.message_type === "post") {
-          logger.dim(`post raw: ${msg.content}`);
-          const post = JSON.parse(msg.content) as { zh_cn?: { title?: string; content?: Array<Array<{ tag: string; text?: string }>> } };
-          const title = post.zh_cn?.title?.trim() ?? "";
-          const blocks = post.zh_cn?.content ?? [];
+          // post 结构：{ title, content } 或 { zh_cn: { title, content } }
+          const raw = JSON.parse(msg.content);
+          const post = raw.zh_cn ?? raw;
+          const title = (post.title ?? "").trim();
+          const blocks: Array<Array<{ tag: string; text?: string }>> = post.content ?? [];
           const body = blocks.flatMap(line => line.map(el => el.text ?? "")).join("\n").trim();
           text = [title, body].filter(Boolean).join("\n").trim();
-          logger.dim(`post extracted: ${text}`);
         }
         if (!text) return;
 
