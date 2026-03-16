@@ -14,14 +14,19 @@ import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
 
 const TOOL_LABELS: Record<string, string> = {
-  Read:  "📂 读取文件",
-  Write: "✏️  写入文件",
-  Edit:  "✏️  编辑文件",
-  Bash:  "⚡ 执行命令",
-  Glob:  "🔍 查找文件",
-  Grep:  "🔎 搜索内容",
-  LS:    "📁 列出目录",
+  Read:           "📂 读取文件",
+  Write:          "✏️  写入文件",
+  Edit:           "✏️  编辑文件",
+  Bash:           "⚡ 执行命令",
+  Glob:           "🔍 查找文件",
+  Grep:           "🔎 搜索内容",
+  LS:             "📁 列出目录",
+  ExitPlanMode:   "📋 退出计划模式",
+  AskUserQuestion:"💬 提问",
 };
+
+// 静默处理的工具（内部状态工具，不需要展示给用户）
+const SILENT_TOOLS = new Set(["ExitPlanMode", "TodoWrite", "TodoRead"]);
 
 function formatInput(name: string, input: Record<string, unknown>): string {
   if (["Read", "Write", "Edit"].includes(name))
@@ -95,7 +100,17 @@ export async function runAgent(
 
         if (block.type === "tool_use" && block.id && block.name) {
           await flush(false);
+          if (SILENT_TOOLS.has(block.name)) break;
           const label  = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
+          // AskUserQuestion：直接把问题内容作为最终回复发给用户
+          if (block.name === "AskUserQuestion") {
+            const input = block.input as { questions?: Array<{ question: string }> };
+            const questions = input.questions?.map(q => q.question).join("\n") ?? "";
+            if (questions) {
+              await replyFinalCard(client, chatId, rootMsgId, questions);
+            }
+            break;
+          }
           const detail = formatInput(block.name, block.input ?? {});
           logger.tool(block.name, detail);
           const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running");
