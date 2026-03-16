@@ -149,8 +149,13 @@ export async function runAgent(
       }
 
       if (textBuffer) {
-        if (textMsgId) await updateText(client, textMsgId, textBuffer); // 清除光标
-        await replyFinalCard(client, chatId, rootMsgId, textBuffer);
+        if (textMsgId) {
+          // 已有流式卡片 → 直接更新，不重复发
+          await updateText(client, textMsgId, textBuffer);
+        } else {
+          // 没有流式卡片（纯工具调用无文字）→ 发一张新卡片
+          await replyFinalCard(client, chatId, rootMsgId, textBuffer);
+        }
       }
 
       logger.reply(chatId);
