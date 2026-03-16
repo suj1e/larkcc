@@ -10,6 +10,75 @@ import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
 
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
+const LOCK_DIR = path.join(os.homedir(), ".larkcc");
+
+interface LockData {
+  pid: number;
+  cwd: string;
+  startedAt: string;
+}
+
+function lockPath(profile?: string): string {
+  const name = profile ? `lock-${profile}` : "lock-default";
+  return path.join(LOCK_DIR, `${name}.json`);
+}
+
+function readLock(profile?: string): LockData | null {
+  try {
+    const p = lockPath(profile);
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeLock(cwd: string, profile?: string): void {
+  if (!fs.existsSync(LOCK_DIR)) fs.mkdirSync(LOCK_DIR, { recursive: true });
+  const data: LockData = { pid: process.pid, cwd, startedAt: new Date().toISOString() };
+  fs.writeFileSync(lockPath(profile), JSON.stringify(data, null, 2), "utf8");
+}
+
+function clearLock(profile?: string): void {
+  try { fs.unlinkSync(lockPath(profile)); } catch {}
+}
+
+function isProcessAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function checkLock(cwd: string, profile?: string): Promise<boolean> {
+  const lock = readLock(profile);
+  if (!lock) return true;
+
+  if (!isProcessAlive(lock.pid)) {
+    clearLock(profile);
+    return true;
+  }
+
+  // 同一目录同一进程，允许（重启场景）
+  if (lock.cwd === cwd && lock.pid === process.pid) return true;
+
+  const profileLabel = profile ? `[${profile}] ` : "";
+  logger.warn(`${profileLabel}Already running!`);
+  logger.warn(`  PID: ${lock.pid}`);
+  logger.warn(`  Project: ${lock.cwd}`);
+  logger.warn(`  Started: ${lock.startedAt}`);
+  console.log("");
+
+  const answer = await new Promise<string>((resolve) => {
+    const rl = (await import("readline")).createInterface({ input: process.stdin, output: process.stdout });
+    rl.question("  Continue anyway? (y/n): ", (a) => { rl.close(); resolve(a.trim().toLowerCase()); });
+  });
+
+  if (answer !== "y") {
+    logger.info("Aborted.");
+    process.exit(0);
+  }
+
+  clearLock(profile);
+  return true;
+}
 
 // 从 ~/.claude/settings.json 注入 env 块
 function injectClaudeEnv(): void {
@@ -91,6 +160,10 @@ export async function startApp(
   const { app_id, app_secret } = config.feishu;
   // owner_open_id 可能在运行时自动填入，直接读 config.feishu
   const getOwnerOpenId = () => config.feishu.owner_open_id;
+
+  // 检测是否已有同 profile 的进程在运行
+  await checkLock(cwd, profile);
+  writeLock(cwd, profile);
 
   injectClaudeEnv();
   ensureClaudeOnboarding();
@@ -253,6 +326,7 @@ export async function startApp(
   const shutdown = async () => {
     console.log("");
     logger.info("Stopping larkcc...");
+    clearLock(profile);
     if (knownChatId) {
       try {
         await sendText(client, knownChatId, `👋 larkcc 已断开${profileLabel}\n📁 项目：\`${cwd}\``);
