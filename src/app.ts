@@ -184,15 +184,22 @@ export async function startApp(
         const chatId = msg.chat_id;
         // 解析消息内容：text 直接取，post（富文本）提取纯文字
         let text = "";
+        // 剥离 HTML 标签的辅助函数
+        const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
         if (msg.message_type === "text") {
-          text = (JSON.parse(msg.content) as { text?: string }).text?.trim() ?? "";
+          text = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
         } else if (msg.message_type === "post") {
           // post 结构：{ title, content } 或 { zh_cn: { title, content } }
           const raw = JSON.parse(msg.content);
           const post = raw.zh_cn ?? raw;
-          const title = (post.title ?? "").trim();
+          const title = stripHtml(post.title ?? "");
           const blocks: Array<Array<{ tag: string; text?: string }>> = post.content ?? [];
-          const body = blocks.flatMap(line => line.map(el => el.text ?? "")).join("\n").trim();
+          // 每行所有 text 块直接拼接（同一行的序号和文字不换行）
+          const lines = blocks.map(line =>
+            line.map(el => stripHtml(el.text ?? "")).join("").trim()
+          ).filter(Boolean);
+          const body = lines.join("\n").trim();
           text = [title, body].filter(Boolean).join("\n").trim();
         }
         if (!text) return;
