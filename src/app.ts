@@ -207,7 +207,7 @@ export async function startApp(
         try {
           const reactionRes = await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "EYES" } },
+            data: { reaction_type: { emoji_type: "OK" } },
           });
           reactionId = reactionRes.data?.reaction_id;
         } catch {}
@@ -235,7 +235,7 @@ export async function startApp(
           }
           await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "NO" } },
+            data: { reaction_type: { emoji_type: "Surprised" } },
           }).catch(() => {});
         } finally {
           processing = false;
