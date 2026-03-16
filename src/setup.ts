@@ -1,5 +1,5 @@
 import readline from "readline";
-import { saveProfile, listProfiles, GLOBAL_CONFIG_PATH } from "./config.js";
+import { saveProfile, GLOBAL_CONFIG_PATH } from "./config.js";
 import { logger } from "./logger.js";
 
 function prompt(rl: readline.Interface, question: string): Promise<string> {
@@ -20,11 +20,9 @@ export async function runSetup(profile?: string): Promise<void> {
 
   console.log(`\n🛠  larkcc setup — configuring ${label}\n`);
 
-  const app_id       = await prompt(rl, "  Feishu App ID     : ");
-  const app_secret   = await prompt(rl, "  Feishu App Secret : ");
-  const owner_open_id = await prompt(rl, "  Your Open ID      : ");
+  const app_id      = await prompt(rl, "  Feishu App ID     : ");
+  const app_secret  = await prompt(rl, "  Feishu App Secret : ");
 
-  // 新建非默认 profile 时，支持自定义名字或自动生成
   let profileName = profile;
   if (!isDefault && !profileName) {
     const input = await prompt(rl, `  Profile name (blank to auto-generate): `);
@@ -34,8 +32,10 @@ export async function runSetup(profile?: string): Promise<void> {
 
   rl.close();
 
-  saveProfile(profileName, { app_id, app_secret, owner_open_id });
-  logger.success(`Config saved to ${GLOBAL_CONFIG_PATH}\n`);
+  // owner_open_id 留空，首次收到消息时自动填入
+  saveProfile(profileName, { app_id, app_secret, owner_open_id: "" });
+  logger.success(`Config saved to ${GLOBAL_CONFIG_PATH}`);
+  logger.dim("Send any message to the bot to auto-detect your open_id\n");
 }
 
 export async function runNewProfile(): Promise<string> {
@@ -43,17 +43,17 @@ export async function runNewProfile(): Promise<string> {
 
   console.log("\n🛠  larkcc — add new profile\n");
 
-  const app_id        = await prompt(rl, "  Feishu App ID     : ");
-  const app_secret    = await prompt(rl, "  Feishu App Secret : ");
-  const owner_open_id = await prompt(rl, "  Your Open ID      : ");
-  const nameInput     = await prompt(rl, "  Profile name (blank to auto-generate): ");
-  const profileName   = nameInput || generateName();
+  const app_id       = await prompt(rl, "  Feishu App ID     : ");
+  const app_secret   = await prompt(rl, "  Feishu App Secret : ");
+  const nameInput    = await prompt(rl, "  Profile name (blank to auto-generate): ");
+  const profileName  = nameInput || generateName();
 
   rl.close();
 
   console.log(`  → Using name: ${profileName}`);
-  saveProfile(profileName, { app_id, app_secret, owner_open_id });
-  logger.success(`Profile "${profileName}" saved\n`);
+  saveProfile(profileName, { app_id, app_secret, owner_open_id: "" });
+  logger.success(`Profile "${profileName}" saved`);
+  logger.dim("Send any message to the bot to auto-detect your open_id\n");
 
   return profileName;
 }
