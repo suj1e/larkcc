@@ -201,11 +201,42 @@ export async function startApp(
         }
 
         processing = true;
+
+        // 收到消息，先加 👀 reaction 表示处理中
+        let reactionId: string | undefined;
+        try {
+          const reactionRes = await client.im.messageReaction.create({
+            path: { message_id: msg.message_id },
+            data: { reaction_type: { emoji_type: "EYES" } },
+          });
+          reactionId = reactionRes.data?.reaction_id;
+        } catch {}
+
         try {
           await runAgent(text, cwd, config, client, chatId);
+          // 回复完成，换成 ✅ reaction
+          if (reactionId) {
+            await client.im.messageReaction.delete({
+              path: { message_id: msg.message_id, reaction_id: reactionId },
+            }).catch(() => {});
+          }
+          await client.im.messageReaction.create({
+            path: { message_id: msg.message_id },
+            data: { reaction_type: { emoji_type: "DONE" } },
+          }).catch(() => {});
         } catch (err) {
           logger.error(`Agent error: ${String(err)}`);
           await sendText(client, chatId, `❌ 出错了：${String(err)}`);
+          // 出错，换成 ❌ reaction
+          if (reactionId) {
+            await client.im.messageReaction.delete({
+              path: { message_id: msg.message_id, reaction_id: reactionId },
+            }).catch(() => {});
+          }
+          await client.im.messageReaction.create({
+            path: { message_id: msg.message_id },
+            data: { reaction_type: { emoji_type: "NO" } },
+          }).catch(() => {});
         } finally {
           processing = false;
         }
