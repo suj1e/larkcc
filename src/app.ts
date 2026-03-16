@@ -8,6 +8,7 @@ import { runAgent, ensureEnv } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
+import readline from "readline";
 
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const LOCK_DIR = path.join(os.homedir(), ".larkcc");
@@ -67,7 +68,7 @@ async function checkLock(cwd: string, profile?: string): Promise<boolean> {
   console.log("");
 
   const answer = await new Promise<string>((resolve) => {
-    const rl = (await import("readline")).createInterface({ input: process.stdin, output: process.stdout });
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question("  Continue anyway? (y/n): ", (a) => { rl.close(); resolve(a.trim().toLowerCase()); });
   });
 
