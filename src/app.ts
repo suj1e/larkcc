@@ -5,7 +5,7 @@ import os from "os";
 import { execSync } from "child_process";
 import { createLarkClient, createWSClient, sendText } from "./feishu.js";
 import { runAgent, ensureEnv } from "./agent.js";
-import { LarkccConfig } from "./config.js";
+import { LarkccConfig, saveOwnerOpenId } from "./config.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
 
@@ -88,7 +88,9 @@ export async function startApp(
   profile: string | undefined,
   continueSession = false
 ): Promise<void> {
-  const { app_id, app_secret, owner_open_id } = config.feishu;
+  const { app_id, app_secret } = config.feishu;
+  // owner_open_id 可能在运行时自动填入，直接读 config.feishu
+  const getOwnerOpenId = () => config.feishu.owner_open_id;
 
   injectClaudeEnv();
   ensureClaudeOnboarding();
@@ -118,7 +120,7 @@ export async function startApp(
   logger.info(`Project:  ${cwd}`);
   logger.info(`Profile:  ${profile ?? "default"}`);
   logger.info(`AppID:    ${app_id}`);
-  logger.info(`Owner:    ${owner_open_id}`);
+  logger.info(`Owner:    ${getOwnerOpenId() || "(pending first message)"}`);
   logger.info(`Session:  ${continueSession ? "continue" : "new"}`);
   logger.info("Connecting to Feishu...");
 
@@ -147,9 +149,17 @@ export async function startApp(
           if (now - t > 30_000) recentMessages.delete(k);
         }
 
-        if (senderId !== owner_open_id) {
+        // owner_open_id 未配置时，第一条消息自动检测并保存
+        const owner_open_id = getOwnerOpenId();
+        if (!owner_open_id) {
+          logger.success(`Auto-detected open_id: ${senderId}`);
+          logger.success(`Saving to config...`);
+          saveOwnerOpenId(senderId, profile);
+          config.feishu.owner_open_id = senderId;
+          // 更新本地变量
+          Object.assign(config.feishu, { owner_open_id: senderId });
+        } else if (senderId !== owner_open_id) {
           logger.warn(`Ignored message from unknown user: ${senderId}`);
-          logger.warn(`  👆 If this is you, run: larkcc --setup and enter this open_id`);
           return;
         }
 
