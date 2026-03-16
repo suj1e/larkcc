@@ -129,8 +129,8 @@ export async function startApp(
 
   let processing  = false;
   let knownChatId = loadChatId();
-  // 去重：记录 "内容+发送者" 的处理时间，30s 内相同内容忽略
-  const recentMessages = new Map<string, number>(); // key → timestamp
+  const startupTime = Date.now(); // 服务启动时间，忽略启动前的所有消息
+  const recentMessages = new Map<string, number>(); // key → timestamp，30s 去重
 
   // --continue：从持久化 session 恢复
   if (continueSession) {
@@ -157,9 +157,16 @@ export async function startApp(
 
         if (msg.message_type !== "text") return;
 
+        // 忽略启动前的消息（长连接重连后会重推历史未 ACK 消息）
+        const msgTimestamp = Number(msg.create_time);
+        const now = Date.now();
+        if (msgTimestamp < startupTime) {
+          logger.dim(`skipped pre-startup message (${Math.round((now - msgTimestamp) / 1000)}s ago)`);
+          return;
+        }
+
         // 去重：30s 内相同发送者+内容只处理一次（防飞书重试）
         const dedupeKey = `${senderId}:${msg.content}`;
-        const now = Date.now();
         const lastSeen = recentMessages.get(dedupeKey);
         if (lastSeen && now - lastSeen < 30_000) return;
         recentMessages.set(dedupeKey, now);
