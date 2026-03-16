@@ -34,11 +34,21 @@ larkcc --version
 
 ## 飞书侧体验
 
-- ✅ 启动时飞书收到连接通知，断开时收到断开通知
+- ✅ 启动时收到连接通知，断开时收到断开通知
 - 👌 收到消息立即打 reaction 表示处理中，完成换成 DONE
 - 💬 所有回复引用你的原始消息
-- ⚡ 工具调用实时展示（读文件、执行命令等）
+- ⚡ 工具调用实时展示（读文件、执行命令等），完成后更新状态
 - 📋 最终回复用富文本卡片渲染，支持 Markdown + 代码高亮
+- 🔢 支持普通文本消息和富文本（post）消息，标题和正文都会识别
+- 💬 Claude 提问时（AskUserQuestion）直接以卡片形式发给你
+
+## 消息类型支持
+
+| 消息类型 | 支持 |
+|---------|------|
+| 普通文本 | ✅ |
+| 富文本（大输入框，带标题） | ✅ |
+| 其他类型 | 忽略 |
 
 ## 配置
 
@@ -76,7 +86,7 @@ export LARKCC_OWNER_OPEN_ID=ou_xxxxxxxx
 
 ### 自定义 API（火山引擎/其他兼容接口）
 
-在 `~/.claude/settings.json` 配置：
+在 `~/.claude/settings.json` 配置，larkcc 启动时自动读取并注入：
 
 ```json
 {
@@ -88,8 +98,6 @@ export LARKCC_OWNER_OPEN_ID=ou_xxxxxxxx
   }
 }
 ```
-
-larkcc 启动时会自动读取此文件并注入环境变量。
 
 ## 飞书开放平台配置
 
@@ -112,3 +120,20 @@ larkcc 启动时会自动读取此文件并注入环境变量。
 | `~/.larkcc/config.yml` | 飞书和 Claude 配置 |
 | `~/.larkcc/state.json` | 持久化 chat_id 和 session_id |
 | `~/.claude.json` | Claude onboarding 状态（自动创建） |
+
+## 工具展示
+
+Claude 调用工具时飞书会实时显示：
+
+| 工具 | 展示 |
+|------|------|
+| Read | 📂 读取文件 |
+| Write | ✏️ 写入文件 |
+| Edit | ✏️ 编辑文件 |
+| Bash | ⚡ 执行命令 |
+| Glob | 🔍 查找文件 |
+| Grep | 🔎 搜索内容 |
+| LS | 📁 列出目录 |
+| AskUserQuestion | 💬 直接发问题给你 |
+| ExitPlanMode / TodoWrite / TodoRead | 静默处理 |
+| 其他未知工具 | 🔧 工具名（降级展示） |
