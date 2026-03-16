@@ -129,6 +129,8 @@ export async function startApp(
 
   let processing  = false;
   let knownChatId = loadChatId();
+  // 去重：记录 "内容+发送者" 的处理时间，30s 内相同内容忽略
+  const recentMessages = new Map<string, number>(); // key → timestamp
 
   // --continue：从持久化 session 恢复
   if (continueSession) {
@@ -154,6 +156,17 @@ export async function startApp(
         const senderId = data.sender.sender_id?.open_id ?? "";
 
         if (msg.message_type !== "text") return;
+
+        // 去重：30s 内相同发送者+内容只处理一次（防飞书重试）
+        const dedupeKey = `${senderId}:${msg.content}`;
+        const now = Date.now();
+        const lastSeen = recentMessages.get(dedupeKey);
+        if (lastSeen && now - lastSeen < 30_000) return;
+        recentMessages.set(dedupeKey, now);
+        // 清理过期记录
+        for (const [k, t] of recentMessages) {
+          if (now - t > 30_000) recentMessages.delete(k);
+        }
 
         if (senderId !== owner_open_id) {
           logger.warn(`Ignored message from unknown user: ${senderId}`);
