@@ -3,8 +3,6 @@ import os from "os";
 import { execSync } from "child_process";
 import * as lark from "@larksuiteoapi/node-sdk";
 import {
-  replyText,
-  updateText,
   replyFinalCard,
   sendToolCard,
   updateToolCard,
@@ -52,26 +50,13 @@ export async function runAgent(
 ): Promise<void> {
   const sessionId = getSession();
 
-  let textMsgId: string | null = null;
   let textBuffer = "";
-  let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
 
-  const flush = async (final = false): Promise<void> => {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    if (!textBuffer) return;
-    const content = textBuffer + (final ? "" : " ▌");
-    if (!textMsgId) {
-      textMsgId = await replyText(client, chatId, rootMsgId, content);
-    } else {
-      await updateText(client, textMsgId, content);
-    }
-  };
-
+  // 流式阶段只累积 buffer，不提前发消息，确保最终回复排在工具卡片之后
   const scheduleFlush = (): void => {
-    if (flushTimer) return;
-    flushTimer = setTimeout(() => flush(), 300);
+    // no-op: 流式内容在 result 事件统一发出
   };
 
   for await (const event of query({
@@ -99,7 +84,6 @@ export async function runAgent(
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
-          await flush(false);
           if (SILENT_TOOLS.has(block.name)) break;
           const label  = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
           // AskUserQuestion：直接把问题内容作为最终回复发给用户
@@ -140,22 +124,15 @@ export async function runAgent(
     }
 
     if (event.type === "result") {
-      if (flushTimer) clearTimeout(flushTimer);
-
       const resultEvent = event as { session_id?: string };
       if (resultEvent.session_id) {
         setSession(resultEvent.session_id);
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
 
+      // 最终回复在所有工具卡片之后发出，顺序正确
       if (textBuffer) {
-        if (textMsgId) {
-          // 已有流式卡片 → 直接更新，不重复发
-          await updateText(client, textMsgId, textBuffer);
-        } else {
-          // 没有流式卡片（纯工具调用无文字）→ 发一张新卡片
-          await replyFinalCard(client, chatId, rootMsgId, textBuffer);
-        }
+        await replyFinalCard(client, chatId, rootMsgId, textBuffer);
       }
 
       logger.reply(chatId);
