@@ -235,7 +235,7 @@ export async function startApp(
           }
           await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "Surprised" } },
+            data: { reaction_type: { emoji_type: "OnIt" } },
           }).catch(() => {});
         } finally {
           processing = false;
