@@ -3,9 +3,9 @@ import os from "os";
 import { execSync } from "child_process";
 import * as lark from "@larksuiteoapi/node-sdk";
 import {
-  sendText,
+  replyText,
   updateText,
-  sendFinalCard,
+  replyFinalCard,
   sendToolCard,
   updateToolCard,
 } from "./feishu.js";
@@ -42,7 +42,8 @@ export async function runAgent(
   cwd: string,
   config: LarkccConfig,
   client: lark.Client,
-  chatId: string
+  chatId: string,
+  rootMsgId: string       // 用户原始消息 id，所有回复都 thread 到这里
 ): Promise<void> {
   const sessionId = getSession();
 
@@ -50,7 +51,6 @@ export async function runAgent(
   let textBuffer = "";
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // tool_use_id → { msgId, label, detail }
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
 
   const flush = async (final = false): Promise<void> => {
@@ -58,7 +58,7 @@ export async function runAgent(
     if (!textBuffer) return;
     const content = textBuffer + (final ? "" : " ▌");
     if (!textMsgId) {
-      textMsgId = await sendText(client, chatId, content);
+      textMsgId = await replyText(client, chatId, rootMsgId, content);
     } else {
       await updateText(client, textMsgId, content);
     }
@@ -78,7 +78,6 @@ export async function runAgent(
       allowedTools: config.claude.allowed_tools,
     },
   })) {
-    // assistant 消息：文字块 + 工具调用块都在 message.content 里
     if (event.type === "assistant") {
       const blocks = event.message.content as Array<{
         type: string;
@@ -89,25 +88,22 @@ export async function runAgent(
       }>;
 
       for (const block of blocks) {
-        // 文字块 → 节流刷新飞书消息（模拟流式）
         if (block.type === "text" && block.text) {
           textBuffer += block.text;
           scheduleFlush();
         }
 
-        // 工具调用块 → 先刷出积压文字，再发独立工具卡片
         if (block.type === "tool_use" && block.id && block.name) {
           await flush(false);
           const label  = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
           const detail = formatInput(block.name, block.input ?? {});
           logger.tool(block.name, detail);
-          const msgId = await sendToolCard(client, chatId, label, detail, "running");
+          const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running");
           toolMsgMap.set(block.id, { msgId, label, detail });
         }
       }
     }
 
-    // user 消息里含 tool_result → 更新工具卡片为完成态（折叠展示结果）
     if (event.type === "user") {
       const blocks = event.message.content as Array<{
         type: string;
@@ -128,7 +124,6 @@ export async function runAgent(
       }
     }
 
-    // 最终结果 → 保存 session，文字消息替换为富文本卡片
     if (event.type === "result") {
       if (flushTimer) clearTimeout(flushTimer);
 
@@ -138,10 +133,9 @@ export async function runAgent(
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
 
-      // 有流式文字 → 清除光标后发卡片；无流式文字 → 直接发卡片，不留占位
       if (textBuffer) {
         if (textMsgId) await updateText(client, textMsgId, textBuffer); // 清除光标
-        await sendFinalCard(client, chatId, textBuffer);
+        await replyFinalCard(client, chatId, rootMsgId, textBuffer);
       }
 
       logger.reply(chatId);
@@ -151,11 +145,9 @@ export async function runAgent(
 
 // 确保子进程能读到 ~/.claude/ 登录态
 export function ensureEnv(): void {
-  // 补全 HOME，确保 claude 能找到 ~/.claude/settings.json
   if (!process.env.HOME) {
     process.env.HOME = os.homedir();
   }
-  // 补全 PATH：从 shell 里读完整的 PATH
   try {
     const shellPath = execSync("bash -lc 'echo $PATH' 2>/dev/null", {
       timeout: 3000,
