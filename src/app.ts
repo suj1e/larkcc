@@ -213,7 +213,7 @@ export async function startApp(
         } catch {}
 
         try {
-          await runAgent(text, cwd, config, client, chatId);
+          await runAgent(text, cwd, config, client, chatId, msg.message_id);
           // 回复完成，换成 ✅ reaction
           if (reactionId) {
             await client.im.messageReaction.delete({
