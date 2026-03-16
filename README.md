@@ -32,20 +32,20 @@ larkcc
 
 ```bash
 # 启动
-larkcc                        # 默认机器人，新会话
-larkcc --continue             # 默认机器人，续接上次会话
-larkcc -p mybot               # 用 mybot 机器人
-larkcc -p mybot --continue    # 用 mybot 机器人，续接上次会话
-larkcc -d                     # 后台运行
+larkcc                          # 默认机器人，新会话
+larkcc --continue               # 默认机器人，续接上次会话
+larkcc -p mybot                 # 用 mybot 机器人
+larkcc -p mybot --continue      # 用 mybot 机器人，续接上次会话
+larkcc -d                       # 后台运行
 
 # 配置
-larkcc --setup                # 配置/更新默认机器人
-larkcc --setup -p mybot       # 配置/更新 mybot 机器人
-larkcc --new-profile          # 新增机器人（引导填写，支持自定义或自动命名）
-larkcc --list-profiles        # 查看所有已配置的机器人
+larkcc --setup                  # 配置/更新默认机器人
+larkcc --setup -p mybot         # 配置/更新 mybot 机器人
+larkcc --new-profile            # 新增机器人（引导填写，支持自定义或自动命名）
+larkcc --list-profiles          # 查看所有已配置的机器人
 
 # Session 管理
-larkcc --reset-session        # 清除默认机器人的 session
+larkcc --reset-session          # 清除默认机器人的 session
 larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 ```
 
@@ -172,13 +172,35 @@ export LARKCC_OWNER_OPEN_ID=ou_xxxxxxxx
 
 ## 飞书开放平台配置
 
-1. 创建应用 → 开启**机器人**能力
-2. 权限管理 → 开通以下权限：
-   - `im:message`
-   - `im:message:send_as_bot`
-   - `im:message.reactions:write_only`
-3. 事件订阅 → 使用**长连接**接收事件 → 订阅 `im.message.receive_v1`
-4. 发布应用
+> ⚠️ 每次修改权限或配置后，必须**创建新版本并发布**，否则更改不生效。
+
+### 1. 创建应用
+
+开放平台 → 创建应用 → 开启**机器人**能力
+
+### 2. 权限配置
+
+最小权限集：
+
+| 权限 | 用途 |
+|------|------|
+| `im:message` | 基础消息权限 |
+| `im:message:send_as_bot` | 机器人发送消息 |
+| `im:message.p2p_msg:readonly` | 接收私聊消息（必须） |
+| `im:message.reactions:write_only` | 打 reaction |
+| `cardkit:card:write` | 发送卡片消息 |
+
+### 3. 事件订阅
+
+事件与回调 → 订阅方式选**使用长连接接收事件** → 添加事件 `im.message.receive_v1`
+
+### 4. 发布应用
+
+创建版本 → 发布（企业自建应用直接发布，无需审核）
+
+### 获取你的 Open ID
+
+启动 larkcc 后给机器人发任意一条消息，会自动检测并保存到配置文件，无需手动填写。
 
 ## 状态文件
 
