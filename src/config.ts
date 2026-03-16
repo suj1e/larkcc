@@ -62,7 +62,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
 
   if (!feishu?.app_id) throw new Error("Missing feishu.app_id in config");
   if (!feishu?.app_secret) throw new Error("Missing feishu.app_secret in config");
-  if (!feishu?.owner_open_id) throw new Error("Missing feishu.owner_open_id in config");
+  // owner_open_id 可以为空，首次收到消息时自动填入
 
   return {
     feishu,
@@ -116,3 +116,23 @@ export function listProfiles(): Array<{ name: string; app_id: string }> {
 }
 
 export { GLOBAL_CONFIG_PATH };
+
+// 首次收到消息时自动写入 owner_open_id
+export function saveOwnerOpenId(openId: string, profile?: string): void {
+  const dir = path.dirname(GLOBAL_CONFIG_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let raw: any = loadYml(GLOBAL_CONFIG_PATH) ?? {};
+
+  if (!profile || profile === "default") {
+    if (!raw.feishu) raw.feishu = {};
+    raw.feishu.owner_open_id = openId;
+  } else {
+    if (!raw.profiles) raw.profiles = {};
+    if (!raw.profiles[profile]) raw.profiles[profile] = {};
+    if (!raw.profiles[profile].feishu) raw.profiles[profile].feishu = {};
+    raw.profiles[profile].feishu.owner_open_id = openId;
+  }
+
+  fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
+}
