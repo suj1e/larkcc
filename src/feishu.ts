@@ -10,7 +10,6 @@ export function createWSClient(appId: string, appSecret: string) {
 
 // ── 消息发送 ─────────────────────────────────────────────────
 
-// 普通文本消息（不带引用，用于连接/断开/错误通知）
 export async function sendText(
   client: lark.Client,
   chatId: string,
@@ -27,7 +26,6 @@ export async function sendText(
   return res.data?.message_id ?? "";
 }
 
-// 流式阶段：发卡片（用 reply 接口带引用，patch 更新不会有类型冲突）
 export async function replyText(
   client: lark.Client,
   chatId: string,
@@ -37,16 +35,11 @@ export async function replyText(
   const card = buildMarkdownCard(text);
   const res = await (client.im.message as any).reply({
     path: { message_id: rootMsgId },
-    data: {
-      content: JSON.stringify(card),
-      msg_type: "interactive",
-      reply_in_thread: false,
-    },
+    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
   });
   return res.data?.message_id ?? "";
 }
 
-// 流式更新：patch 卡片内容
 export async function updateText(
   client: lark.Client,
   msgId: string,
@@ -59,7 +52,6 @@ export async function updateText(
   });
 }
 
-// 最终回复卡片（用 reply 接口，带引用标记）
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
@@ -69,15 +61,10 @@ export async function replyFinalCard(
   const card = buildMarkdownCard(markdown);
   await (client.im.message as any).reply({
     path: { message_id: rootMsgId },
-    data: {
-      content: JSON.stringify(card),
-      msg_type: "interactive",
-      reply_in_thread: false,
-    },
+    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
   });
 }
 
-// 工具调用卡片（用 reply 接口，带引用标记）
 export async function sendToolCard(
   client: lark.Client,
   chatId: string,
@@ -91,16 +78,11 @@ export async function sendToolCard(
   const card = buildMarkdownCard(content);
   const res = await (client.im.message as any).reply({
     path: { message_id: rootMsgId },
-    data: {
-      content: JSON.stringify(card),
-      msg_type: "interactive",
-      reply_in_thread: false,
-    },
+    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
   });
   return res.data?.message_id ?? "";
 }
 
-// 工具完成：patch 更新卡片状态
 export async function updateToolCard(
   client: lark.Client,
   msgId: string,
@@ -116,13 +98,40 @@ export async function updateToolCard(
   });
 }
 
+// ── 图片下载 ─────────────────────────────────────────────────
+
+export async function downloadImage(
+  client: lark.Client,
+  messageId: string,
+  imageKey: string,
+): Promise<{ base64: string; mediaType: string } | null> {
+  try {
+    const res = await client.im.messageResource.get({
+      path: { message_id: messageId, file_key: imageKey },
+      params: { type: "image" },
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.data as any) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const buf = Buffer.concat(chunks);
+    const base64 = buf.toString("base64");
+    const header = buf.slice(0, 4).toString("hex");
+    let mediaType = "image/jpeg";
+    if (header.startsWith("89504e47")) mediaType = "image/png";
+    else if (header.startsWith("47494638")) mediaType = "image/gif";
+    else if (header.startsWith("52494646")) mediaType = "image/webp";
+    return { base64, mediaType };
+  } catch {
+    return null;
+  }
+}
+
 // ── 卡片构建 ─────────────────────────────────────────────────
 
 function buildMarkdownCard(markdown: string) {
   return {
     schema: "2.0",
-    body: {
-      elements: [{ tag: "markdown", content: markdown }],
-    },
+    body: { elements: [{ tag: "markdown", content: markdown }] },
   };
 }
