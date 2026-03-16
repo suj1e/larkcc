@@ -2,26 +2,22 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import readline from "readline";
 import { execSync } from "child_process";
-import { createLarkClient, createWSClient, sendText } from "./feishu.js";
-import { runAgent, ensureEnv } from "./agent.js";
+import { createLarkClient, createWSClient, sendText, downloadImage } from "./feishu.js";
+import { runAgent, ensureEnv, ImageInput } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
+import { parseCommand } from "./commands.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
-import readline from "readline";
 
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const LOCK_DIR = path.join(os.homedir(), ".larkcc");
 
-interface LockData {
-  pid: number;
-  cwd: string;
-  startedAt: string;
-}
+interface LockData { pid: number; cwd: string; startedAt: string; }
 
 function lockPath(profile?: string): string {
-  const name = profile ? `lock-${profile}` : "lock-default";
-  return path.join(LOCK_DIR, `${name}.json`);
+  return path.join(LOCK_DIR, profile ? `lock-${profile}.json` : "lock-default.json");
 }
 
 function readLock(profile?: string): LockData | null {
@@ -29,15 +25,12 @@ function readLock(profile?: string): LockData | null {
     const p = lockPath(profile);
     if (!fs.existsSync(p)) return null;
     return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function writeLock(cwd: string, profile?: string): void {
   if (!fs.existsSync(LOCK_DIR)) fs.mkdirSync(LOCK_DIR, { recursive: true });
-  const data: LockData = { pid: process.pid, cwd, startedAt: new Date().toISOString() };
-  fs.writeFileSync(lockPath(profile), JSON.stringify(data, null, 2), "utf8");
+  fs.writeFileSync(lockPath(profile), JSON.stringify({ pid: process.pid, cwd, startedAt: new Date().toISOString() }, null, 2), "utf8");
 }
 
 function clearLock(profile?: string): void {
@@ -48,17 +41,11 @@ function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-async function checkLock(cwd: string, profile?: string): Promise<boolean> {
+async function checkLock(cwd: string, profile?: string): Promise<void> {
   const lock = readLock(profile);
-  if (!lock) return true;
-
-  if (!isProcessAlive(lock.pid)) {
-    clearLock(profile);
-    return true;
-  }
-
-  // 同一目录同一进程，允许（重启场景）
-  if (lock.cwd === cwd && lock.pid === process.pid) return true;
+  if (!lock) return;
+  if (!isProcessAlive(lock.pid)) { clearLock(profile); return; }
+  if (lock.cwd === cwd && lock.pid === process.pid) return;
 
   const profileLabel = profile ? `[${profile}] ` : "";
   logger.warn(`${profileLabel}Already running!`);
@@ -72,16 +59,10 @@ async function checkLock(cwd: string, profile?: string): Promise<boolean> {
     rl.question("  Continue anyway? (y/n): ", (a) => { rl.close(); resolve(a.trim().toLowerCase()); });
   });
 
-  if (answer !== "y") {
-    logger.info("Aborted.");
-    process.exit(0);
-  }
-
+  if (answer !== "y") { logger.info("Aborted."); process.exit(0); }
   clearLock(profile);
-  return true;
 }
 
-// 从 ~/.claude/settings.json 注入 env 块
 function injectClaudeEnv(): void {
   try {
     if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return;
@@ -91,46 +72,33 @@ function injectClaudeEnv(): void {
       if (!process.env[key]) process.env[key] = String(value);
     }
     logger.dim(`injected ${Object.keys(env).length} env vars from ~/.claude/settings.json`);
-  } catch (err) {
-    logger.warn(`Failed to read ~/.claude/settings.json: ${String(err)}`);
-  }
+  } catch (err) { logger.warn(`Failed to read ~/.claude/settings.json: ${String(err)}`); }
 }
 
-// 确保 ~/.claude.json 有 hasCompletedOnboarding
 function ensureClaudeOnboarding(): void {
   const claudeJsonPath = path.join(os.homedir(), ".claude.json");
   try {
     let json: Record<string, unknown> = {};
-    if (fs.existsSync(claudeJsonPath)) {
-      json = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
-    }
+    if (fs.existsSync(claudeJsonPath)) json = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
     if (!json.hasCompletedOnboarding) {
       json.hasCompletedOnboarding = true;
       fs.writeFileSync(claudeJsonPath, JSON.stringify(json, null, 2), "utf8");
       logger.dim("wrote hasCompletedOnboarding to ~/.claude.json");
     }
-  } catch (err) {
-    logger.warn(`Failed to write ~/.claude.json: ${String(err)}`);
-  }
+  } catch (err) { logger.warn(`Failed to write ~/.claude.json: ${String(err)}`); }
 }
 
-// 自动探测 claude 路径
 function ensureClaudeInPath(): void {
   const commonPaths = [
-    "/usr/local/bin",
-    "/usr/bin",
-    `${os.homedir()}/.npm-global/bin`,
-    `${os.homedir()}/.local/bin`,
-    "/opt/homebrew/bin",
-    "/home/linuxbrew/.linuxbrew/bin",
+    "/usr/local/bin", "/usr/bin",
+    `${os.homedir()}/.npm-global/bin`, `${os.homedir()}/.local/bin`,
+    "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
   ];
-
   try {
     const claudePath = execSync("which claude 2>/dev/null || command -v claude 2>/dev/null", {
       shell: "/bin/bash",
       env: { ...process.env, PATH: [...commonPaths, process.env.PATH ?? ""].join(":") },
     }).toString().trim();
-
     if (claudePath) {
       const dir = path.dirname(claudePath);
       if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}:${process.env.PATH}`;
@@ -138,7 +106,6 @@ function ensureClaudeInPath(): void {
       return;
     }
   } catch {}
-
   for (const dir of commonPaths) {
     if (fs.existsSync(path.join(dir, "claude"))) {
       if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}:${process.env.PATH}`;
@@ -146,7 +113,6 @@ function ensureClaudeInPath(): void {
       return;
     }
   }
-
   logger.warn("claude CLI not found — make sure it's installed: npm install -g @anthropic-ai/claude-code");
 }
 
@@ -159,10 +125,9 @@ export async function startApp(
   continueSession = false
 ): Promise<void> {
   const { app_id, app_secret } = config.feishu;
-  // owner_open_id 可能在运行时自动填入，直接读 config.feishu
   const getOwnerOpenId = () => config.feishu.owner_open_id;
+  const customCommands: Record<string, string> = (config as any).commands ?? {};
 
-  // 检测是否已有同 profile 的进程在运行
   await checkLock(cwd, profile);
   writeLock(cwd, profile);
 
@@ -171,23 +136,18 @@ export async function startApp(
   ensureEnv();
   ensureClaudeInPath();
 
-  const client   = createLarkClient(app_id, app_secret);
-  const wsClient = createWSClient(app_id, app_secret);
+  const client    = createLarkClient(app_id, app_secret);
+  const wsClient  = createWSClient(app_id, app_secret);
 
-  let processing  = false;
-  let knownChatId = getChatId();
-  const startupTime = Date.now();
+  let processing   = false;
+  let knownChatId  = getChatId();
+  const startupTime    = Date.now();
   const recentMessages = new Map<string, number>();
 
-  // --continue：从持久化 session 恢复
   if (continueSession) {
     const savedSession = getSession(true);
-    if (savedSession) {
-      setSession(savedSession);
-      logger.info(`Resuming session: ${savedSession}`);
-    } else {
-      logger.warn("No saved session found, starting fresh");
-    }
+    if (savedSession) { setSession(savedSession); logger.info(`Resuming session: ${savedSession}`); }
+    else logger.warn("No saved session found, starting fresh");
   }
 
   const profileLabel = profile ? ` [${profile}]` : "";
@@ -204,9 +164,8 @@ export async function startApp(
         const msg      = data.message;
         const senderId = data.sender.sender_id?.open_id ?? "";
 
-        if (!["text", "post"].includes(msg.message_type)) return;
+        if (!["text", "post", "image"].includes(msg.message_type)) return;
 
-        // 忽略启动前的消息
         const msgTimestamp = Number(msg.create_time);
         const now = Date.now();
         if (msgTimestamp < startupTime) {
@@ -214,57 +173,79 @@ export async function startApp(
           return;
         }
 
-        // 去重
         const dedupeKey = `${senderId}:${msg.message_id}`;
-        const lastSeen = recentMessages.get(dedupeKey);
+        const lastSeen  = recentMessages.get(dedupeKey);
         if (lastSeen && now - lastSeen < 30_000) return;
         recentMessages.set(dedupeKey, now);
         for (const [k, t] of recentMessages) {
           if (now - t > 30_000) recentMessages.delete(k);
         }
 
-        // owner_open_id 未配置时，第一条消息自动检测并保存
         const owner_open_id = getOwnerOpenId();
         if (!owner_open_id) {
           logger.success(`Auto-detected open_id: ${senderId}`);
-          logger.success(`Saving to config...`);
           saveOwnerOpenId(senderId, profile);
           config.feishu.owner_open_id = senderId;
-          // 更新本地变量
-          Object.assign(config.feishu, { owner_open_id: senderId });
         } else if (senderId !== owner_open_id) {
           logger.warn(`Ignored message from unknown user: ${senderId}`);
           return;
         }
 
         const chatId = msg.chat_id;
-
-        // 解析消息内容
-        const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
-        let text = "";
-        if (msg.message_type === "text") {
-          text = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
-        } else if (msg.message_type === "post") {
-          const raw = JSON.parse(msg.content);
-          const post = raw.zh_cn ?? raw;
-          const title = stripHtml(post.title ?? "");
-          const blocks: Array<Array<{ tag: string; text?: string }>> = post.content ?? [];
-          const lines = blocks.map(line =>
-            line.map(el => stripHtml(el.text ?? "")).join("").trim()
-          ).filter(Boolean);
-          const body = lines.join("\n").trim();
-          text = [title, body].filter(Boolean).join("\n").trim();
-        }
-        if (!text) return;
-
-        // 首次收到消息，记住 chat_id
         if (!knownChatId || knownChatId !== chatId) {
           knownChatId = chatId;
           saveChatId(chatId);
           logger.dim(`chat_id saved: ${chatId}`);
         }
 
-        logger.msg(senderId, text);
+        // ── 解析消息内容 ──────────────────────────────────────
+        const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+        let text = "";
+        let images: ImageInput[] = [];
+
+        if (msg.message_type === "text") {
+          text = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
+        } else if (msg.message_type === "post") {
+          const raw  = JSON.parse(msg.content);
+          const post = raw.zh_cn ?? raw;
+          const title  = stripHtml(post.title ?? "");
+          const blocks: Array<Array<{ tag: string; text?: string }>> = post.content ?? [];
+          const lines  = blocks.map(line =>
+            line.map(el => stripHtml(el.text ?? "")).join("").trim()
+          ).filter(Boolean);
+          text = [title, lines.join("\n")].filter(Boolean).join("\n").trim();
+        } else if (msg.message_type === "image") {
+          const imageKey = (JSON.parse(msg.content) as { image_key?: string }).image_key;
+          if (imageKey) {
+            logger.dim(`downloading image: ${imageKey}`);
+            const img = await downloadImage(client, msg.message_id, imageKey);
+            if (img) {
+              images = [img];
+              text   = "请分析这张图片，根据内容执行相应操作";
+            } else {
+              await sendText(client, chatId, "❌ 图片下载失败");
+              return;
+            }
+          }
+        }
+
+        if (!text && images.length === 0) return;
+
+        // ── Slash 命令拦截 ────────────────────────────────────
+        if (text.startsWith("/")) {
+          const result = parseCommand(text, cwd, customCommands);
+          if (result) {
+            if (result.type === "exec" || result.type === "help" || result.type === "unknown") {
+              await sendText(client, chatId, result.output ?? "");
+              return;
+            }
+            if (result.type === "prompt" && result.prompt) {
+              text = result.prompt; // 展开成 prompt 继续走 Claude
+            }
+          }
+        }
+
+        logger.msg(senderId, text || "[image]");
 
         if (processing) {
           logger.warn("Still processing previous message, skipping...");
@@ -274,7 +255,6 @@ export async function startApp(
 
         processing = true;
 
-        // Reaction: 处理中
         let reactionId: string | undefined;
         try {
           const reactionRes = await client.im.messageReaction.create({
@@ -285,7 +265,7 @@ export async function startApp(
         } catch {}
 
         try {
-          await runAgent(text, cwd, config, client, chatId, msg.message_id);
+          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },
