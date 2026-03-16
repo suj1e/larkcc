@@ -10,7 +10,7 @@ export function createWSClient(appId: string, appSecret: string) {
 
 // ── 消息发送 ─────────────────────────────────────────────────
 
-// 普通文本消息（不带 thread，用于连接/断开通知）
+// 普通文本消息（不带引用，用于连接/断开/错误通知）
 export async function sendText(
   client: lark.Client,
   chatId: string,
@@ -27,32 +27,35 @@ export async function sendText(
   return res.data?.message_id ?? "";
 }
 
-// 流式文字消息（用 create，后续 patch 才能正常更新）
+// 流式阶段：发卡片（用 reply 接口带引用，patch 更新不会有类型冲突）
 export async function replyText(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   text: string
 ): Promise<string> {
-  const res = await client.im.message.create({
-    params: { receive_id_type: "chat_id" },
+  const card = buildMarkdownCard(text);
+  const res = await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
     data: {
-      receive_id: chatId,
-      msg_type: "text",
-      content: JSON.stringify({ text }),
+      content: JSON.stringify(card),
+      msg_type: "interactive",
+      reply_in_thread: false,
     },
   });
   return res.data?.message_id ?? "";
 }
 
+// 流式更新：patch 卡片内容
 export async function updateText(
   client: lark.Client,
   msgId: string,
   text: string
 ): Promise<void> {
+  const card = buildMarkdownCard(text);
   await client.im.message.patch({
     path: { message_id: msgId },
-    data: { content: JSON.stringify({ text }) },
+    data: { content: JSON.stringify(card) },
   });
 }
 
@@ -97,13 +100,13 @@ export async function sendToolCard(
   return res.data?.message_id ?? "";
 }
 
-// 工具完成：更新卡片状态（patch 不需要 thread，已在 thread 里了）
+// 工具完成：patch 更新卡片状态
 export async function updateToolCard(
   client: lark.Client,
   msgId: string,
   label: string,
   detail: string,
-  _resultPreview: string  // 精简模式不显示结果
+  _resultPreview: string
 ): Promise<void> {
   const content = `${label}\n\`${detail}\`\n✅ 完成`;
   const card = buildMarkdownCard(content);
