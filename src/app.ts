@@ -187,9 +187,13 @@ export async function startApp(
         if (msg.message_type === "text") {
           text = (JSON.parse(msg.content) as { text?: string }).text?.trim() ?? "";
         } else if (msg.message_type === "post") {
-          const post = JSON.parse(msg.content) as { zh_cn?: { content?: Array<Array<{ tag: string; text?: string }>> } };
+          logger.dim(`post raw: ${msg.content}`);
+          const post = JSON.parse(msg.content) as { zh_cn?: { title?: string; content?: Array<Array<{ tag: string; text?: string }>> } };
+          const title = post.zh_cn?.title?.trim() ?? "";
           const blocks = post.zh_cn?.content ?? [];
-          text = blocks.flatMap(line => line.map(el => el.text ?? "")).join("\n").trim();
+          const body = blocks.flatMap(line => line.map(el => el.text ?? "")).join("\n").trim();
+          text = [title, body].filter(Boolean).join("\n").trim();
+          logger.dim(`post extracted: ${text}`);
         }
         if (!text) return;
 
