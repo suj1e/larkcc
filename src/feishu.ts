@@ -27,19 +27,19 @@ export async function sendText(
   return res.data?.message_id ?? "";
 }
 
-// 回复消息（用 reply 接口，带引用标记）
+// 流式文字消息（用 create，后续 patch 才能正常更新）
 export async function replyText(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   text: string
 ): Promise<string> {
-  const res = await (client.im.message as any).reply({
-    path: { message_id: rootMsgId },
+  const res = await client.im.message.create({
+    params: { receive_id_type: "chat_id" },
     data: {
-      content: JSON.stringify({ text }),
+      receive_id: chatId,
       msg_type: "text",
-      reply_in_thread: false,
+      content: JSON.stringify({ text }),
     },
   });
   return res.data?.message_id ?? "";
