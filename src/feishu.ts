@@ -110,10 +110,17 @@ export async function downloadImage(
       path: { message_id: messageId, file_key: imageKey },
       params: { type: "image" },
     });
+    // 飞书 SDK 返回的是 { writeFile, getReadableStream } 对象
+    // 用 getReadableStream 读取数据
+    const stream = (res as any).getReadableStream();
     const chunks: Buffer[] = [];
-    for await (const chunk of res.data as any) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (chunk: any) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      stream.on("end", resolve);
+      stream.on("error", reject);
+    });
     const buf = Buffer.concat(chunks);
     const base64 = buf.toString("base64");
     const header = buf.slice(0, 4).toString("hex");
