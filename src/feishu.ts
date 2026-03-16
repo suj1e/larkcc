@@ -37,8 +37,7 @@ export async function updateText(
   });
 }
 
-// 流式阶段结束后，直接发一条新卡片（不删旧消息，避免"撤回"提示）
-// 旧的文本流式消息会保留，新卡片是最终完整结果
+// 最终回复：富文本卡片，Markdown + 代码高亮
 export async function sendFinalCard(
   client: lark.Client,
   chatId: string,
@@ -55,7 +54,7 @@ export async function sendFinalCard(
   });
 }
 
-// 工具调用卡片
+// 工具调用卡片（running 状态）
 export async function sendToolCard(
   client: lark.Client,
   chatId: string,
@@ -63,8 +62,8 @@ export async function sendToolCard(
   detail: string,
   status: "running" | "done" | "error" = "running",
 ): Promise<string> {
-  const statusIcon = status === "running" ? "⏳" : status === "done" ? "✅" : "❌";
-  const content = `${label}\n\`${detail}\`\n${statusIcon} ${status === "running" ? "进行中..." : "完成"}`;
+  const statusIcon = status === "running" ? "⏳ 进行中..." : status === "done" ? "✅ 完成" : "❌ 失败";
+  const content = `${label}\n\`${detail}\`\n${statusIcon}`;
   const card = buildMarkdownCard(content);
   const res = await client.im.message.create({
     params: { receive_id_type: "chat_id" },
@@ -77,6 +76,7 @@ export async function sendToolCard(
   return res.data?.message_id ?? "";
 }
 
+// 工具完成：更新卡片，完整显示结果（纯 Markdown 代码块，不用 <details>）
 export async function updateToolCard(
   client: lark.Client,
   msgId: string,
@@ -85,8 +85,8 @@ export async function updateToolCard(
   resultPreview: string
 ): Promise<void> {
   let content = `${label}\n\`${detail}\`\n✅ 完成`;
-  if (resultPreview) {
-    content += `\n\n<details>\n<summary>查看结果</summary>\n\n\`\`\`\n${resultPreview}\n\`\`\`\n\n</details>`;
+  if (resultPreview.trim()) {
+    content += `\n\`\`\`\n${resultPreview}\n\`\`\``;
   }
   const card = buildMarkdownCard(content);
   await client.im.message.patch({
