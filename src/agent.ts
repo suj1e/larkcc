@@ -138,8 +138,9 @@ export async function runAgent(
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
 
+      // 有流式文字 → 清除光标后发卡片；无流式文字 → 直接发卡片，不留占位
       if (textBuffer) {
-        if (!textMsgId) textMsgId = await sendText(client, chatId, "...");
+        if (textMsgId) await updateText(client, textMsgId, textBuffer); // 清除光标
         await sendFinalCard(client, chatId, textBuffer);
       }
 
