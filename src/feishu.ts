@@ -52,17 +52,29 @@ export async function updateText(
   });
 }
 
+// 最终回复卡片，超长截断，卡片失败 fallback 到普通文本
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   markdown: string
 ): Promise<void> {
-  const card = buildMarkdownCard(markdown);
-  await (client.im.message as any).reply({
-    path: { message_id: rootMsgId },
-    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
-  });
+  const truncated = markdown.length > 3000
+    ? markdown.slice(0, 3000) + "\n\n...(内容过长已截断)"
+    : markdown;
+  try {
+    const card = buildMarkdownCard(truncated);
+    await (client.im.message as any).reply({
+      path: { message_id: rootMsgId },
+      data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+    });
+  } catch {
+    // 卡片失败 fallback 到普通文本
+    await (client.im.message as any).reply({
+      path: { message_id: rootMsgId },
+      data: { content: JSON.stringify({ text: truncated }), msg_type: "text", reply_in_thread: false },
+    });
+  }
 }
 
 export async function sendToolCard(
@@ -110,8 +122,6 @@ export async function downloadImage(
       path: { message_id: messageId, file_key: imageKey },
       params: { type: "image" },
     });
-    // 飞书 SDK 返回的是 { writeFile, getReadableStream } 对象
-    // 用 getReadableStream 读取数据
     const stream = (res as any).getReadableStream();
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
