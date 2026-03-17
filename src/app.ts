@@ -116,6 +116,11 @@ function ensureClaudeInPath(): void {
   logger.warn("claude CLI not found — make sure it's installed: npm install -g @anthropic-ai/claude-code");
 }
 
+// 去掉消息里的 @ 提及文字，只保留实际内容
+function stripMentions(text: string): string {
+  return text.replace(/@\S+/g, "").trim();
+}
+
 // ── 主逻辑 ────────────────────────────────────────────────────
 
 export async function startApp(
@@ -139,13 +144,21 @@ export async function startApp(
   const client    = createLarkClient(app_id, app_secret);
   const wsClient  = createWSClient(app_id, app_secret);
 
+  // 获取机器人自己的 open_id，用于群消息 @ 识别
+  let botOpenId = "";
+  try {
+    const botInfo = await client.bot.getBotInfo({});
+    botOpenId = (botInfo as any).data?.open_id ?? "";
+    if (botOpenId) logger.dim(`bot open_id: ${botOpenId}`);
+  } catch {}
+
   let processing   = false;
   let processingStartedAt = 0;
   let currentAbortController: AbortController | null = null;
   let knownChatId  = getChatId();
   const startupTime    = Date.now();
   const recentMessages = new Map<string, number>();
-  const PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟超时自动释放
+  const PROCESSING_TIMEOUT_MS = 10 * 60 * 1000;
 
   if (continueSession) {
     const savedSession = getSession(true);
@@ -166,6 +179,7 @@ export async function startApp(
       "im.message.receive_v1": async (data) => {
         const msg      = data.message;
         const senderId = data.sender.sender_id?.open_id ?? "";
+        const isGroup  = msg.chat_type === "group";
 
         if (!["text", "post", "image"].includes(msg.message_type)) return;
 
@@ -174,6 +188,16 @@ export async function startApp(
         if (msgTimestamp < startupTime) {
           logger.dim(`skipped pre-startup message (${Math.round((now - msgTimestamp) / 1000)}s ago)`);
           return;
+        }
+
+        // 群消息：只响应 @ 自己 或 引用了消息（不管引用谁）
+        if (isGroup) {
+          const mentions: Array<{ id?: { open_id?: string } }> = (msg as any).mentions ?? [];
+          const atBot = botOpenId
+            ? mentions.some(m => m.id?.open_id === botOpenId)
+            : mentions.length > 0; // botOpenId 未知时，有 @ 就响应
+          const hasQuote = !!(msg as any).parent_id;
+          if (!atBot && !hasQuote) return;
         }
 
         const dedupeKey = `${senderId}:${msg.message_id}`;
@@ -198,7 +222,7 @@ export async function startApp(
         if (!knownChatId || knownChatId !== chatId) {
           knownChatId = chatId;
           saveChatId(chatId);
-          logger.dim(`chat_id saved: ${chatId}`);
+          logger.dim(`chat_id saved: ${chatId} (${isGroup ? "group" : "p2p"})`);
         }
 
         // ── 解析消息内容 ──────────────────────────────────────
@@ -207,7 +231,8 @@ export async function startApp(
         let images: ImageInput[] = [];
 
         if (msg.message_type === "text") {
-          text = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
+          const raw = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
+          text = isGroup ? stripMentions(raw) : raw;
         } else if (msg.message_type === "post") {
           const raw  = JSON.parse(msg.content);
           const post = raw.zh_cn ?? raw;
@@ -216,7 +241,9 @@ export async function startApp(
           const lines  = blocks.map(line =>
             line.map(el => stripHtml(el.text ?? "")).join("").trim()
           ).filter(Boolean);
-          text = [title, lines.join("\n")].filter(Boolean).join("\n").trim();
+          const body = lines.join("\n").trim();
+          text = isGroup ? stripMentions([title, body].filter(Boolean).join("\n").trim())
+                         : [title, body].filter(Boolean).join("\n").trim();
         } else if (msg.message_type === "image") {
           const imageKey = (JSON.parse(msg.content) as { image_key?: string }).image_key;
           if (imageKey) {
@@ -238,7 +265,6 @@ export async function startApp(
         if (text.startsWith("/")) {
           const cmdText = text.toLowerCase().trim();
 
-          // /stop /cancel → 打断当前任务
           if (cmdText === "/stop" || cmdText === "/cancel") {
             if (processing && currentAbortController) {
               currentAbortController.abort();
@@ -265,7 +291,7 @@ export async function startApp(
           }
         }
 
-        logger.msg(senderId, text || "[image]");
+        logger.msg(senderId, `[${isGroup ? "group" : "p2p"}] ${text || "[image]"}`);
 
         // 超时自动释放
         if (processing && Date.now() - processingStartedAt > PROCESSING_TIMEOUT_MS) {
