@@ -147,7 +147,7 @@ export async function startApp(
   // 获取机器人自己的 open_id，用于群消息 @ 识别
   let botOpenId = "";
   try {
-    const botInfo = await client.bot.getBotInfo({});
+    const botInfo = await (client as any).bot.getBotInfo({});
     botOpenId = (botInfo as any).data?.open_id ?? "";
     if (botOpenId) logger.dim(`bot open_id: ${botOpenId}`);
   } catch {}
