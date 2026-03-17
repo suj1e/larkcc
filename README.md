@@ -57,6 +57,7 @@ larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 
 | 命令 | 说明 |
 |------|------|
+| `/stop` `/cancel` | **中断当前任务** |
 | `/s` `/status` | git status + 最近提交 |
 | `/d` `/diff` | git diff |
 | `/l` `/log` | git log |
@@ -94,6 +95,18 @@ commands:
 ```
 
 使用：`/deploy` 或 `/standup`
+
+## 任务控制
+
+```
+你：帮我重构整个项目...
+  → Claude 开始执行
+
+你：/stop
+  → ⏹ 已发送中断信号，等待当前步骤完成...
+```
+
+如果任务长时间无响应（超过 10 分钟），锁会自动释放，无需重启 larkcc。
 
 ## 图片支持
 
@@ -157,6 +170,7 @@ larkcc
 - 📋 最终回复 Markdown 卡片渲染
 - 🖼 支持图片消息，Claude 直接分析
 - ⌨️ 支持 `/命令` 快捷操作
+- ⏹ `/stop` 随时中断任务
 
 ## 消息类型支持
 
