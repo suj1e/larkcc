@@ -140,9 +140,12 @@ export async function startApp(
   const wsClient  = createWSClient(app_id, app_secret);
 
   let processing   = false;
+  let processingStartedAt = 0;
+  let currentAbortController: AbortController | null = null;
   let knownChatId  = getChatId();
   const startupTime    = Date.now();
   const recentMessages = new Map<string, number>();
+  const PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟超时自动释放
 
   if (continueSession) {
     const savedSession = getSession(true);
@@ -233,6 +236,23 @@ export async function startApp(
 
         // ── Slash 命令拦截 ────────────────────────────────────
         if (text.startsWith("/")) {
+          const cmdText = text.toLowerCase().trim();
+
+          // /stop /cancel → 打断当前任务
+          if (cmdText === "/stop" || cmdText === "/cancel") {
+            if (processing && currentAbortController) {
+              currentAbortController.abort();
+              await sendText(client, chatId, "⏹ 已发送中断信号，等待当前步骤完成...");
+            } else if (processing) {
+              processing = false;
+              processingStartedAt = 0;
+              await sendText(client, chatId, "⏹ 已强制释放，可以发新消息了");
+            } else {
+              await sendText(client, chatId, "没有正在处理的任务");
+            }
+            return;
+          }
+
           const result = parseCommand(text, cwd, customCommands);
           if (result) {
             if (result.type === "exec" || result.type === "help" || result.type === "unknown") {
@@ -240,20 +260,31 @@ export async function startApp(
               return;
             }
             if (result.type === "prompt" && result.prompt) {
-              text = result.prompt; // 展开成 prompt 继续走 Claude
+              text = result.prompt;
             }
           }
         }
 
         logger.msg(senderId, text || "[image]");
 
+        // 超时自动释放
+        if (processing && Date.now() - processingStartedAt > PROCESSING_TIMEOUT_MS) {
+          logger.warn("Processing timeout, force releasing lock...");
+          processing = false;
+          processingStartedAt = 0;
+          currentAbortController = null;
+        }
+
         if (processing) {
+          const elapsed = Math.round((Date.now() - processingStartedAt) / 1000);
           logger.warn("Still processing previous message, skipping...");
-          await sendText(client, chatId, "⏳ 上一条消息还在处理中，请稍候...");
+          await sendText(client, chatId, `⏳ 上一条消息还在处理中（已${elapsed}秒），发送 /stop 可强制中断`);
           return;
         }
 
         processing = true;
+        processingStartedAt = Date.now();
+        currentAbortController = new AbortController();
 
         let reactionId: string | undefined;
         try {
@@ -265,7 +296,7 @@ export async function startApp(
         } catch {}
 
         try {
-          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined);
+          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },
@@ -289,6 +320,8 @@ export async function startApp(
           }).catch(() => {});
         } finally {
           processing = false;
+          processingStartedAt = 0;
+          currentAbortController = null;
         }
       },
     }),
