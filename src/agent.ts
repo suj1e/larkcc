@@ -51,7 +51,8 @@ export async function runAgent(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
-  images?: ImageInput[]   // 可选图片输入
+  images?: ImageInput[],
+  abortSignal?: AbortSignal   // 可选中断信号
 ): Promise<void> {
   const sessionId = getSession();
 
@@ -77,8 +78,16 @@ export async function runAgent(
       resume: sessionId,
       permissionMode: config.claude.permission_mode as "acceptEdits",
       allowedTools: config.claude.allowed_tools,
+      abortSignal,
     },
   } as any)) {
+    // 检查是否已中断
+    if (abortSignal?.aborted) {
+      logger.info("Agent aborted by user");
+      await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断");
+      break;
+    }
+
     if (event.type === "assistant") {
       const blocks = event.message.content as Array<{
         type: string;
