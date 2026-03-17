@@ -23,8 +23,6 @@ larkcc
 
 # 3. 给机器人发任意一条消息，自动检测并保存你的 open_id
 # ✅ Auto-detected open_id: ou_xxx
-# ✅ Saving to config...
-
 # 之后就可以正常使用了
 ```
 
@@ -49,6 +47,34 @@ larkcc --reset-session          # 清除默认机器人的 session
 larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 ```
 
+## 群聊支持
+
+可以把多个机器人拉进同一个飞书群，通过 @ 或引用回复来分别控制：
+
+```
+群：你 + 机器人A(tiz项目) + 机器人B(larkcc项目) + 机器人C + 机器人D
+
+你：@机器人A 帮我分析登录模块
+机器人A：好的，我来看 tiz 项目的登录模块...
+
+你：@机器人B 帮我看 agent.ts
+机器人B：好的，我来看 larkcc 的 agent.ts...
+
+你：[引用机器人A的回复] 这个问题怎么修？
+机器人A：续接上次对话继续回复...
+```
+
+**触发规则：**
+- 群消息：@ 机器人 或 引用机器人的消息 才会触发
+- 单聊：直接发消息即可
+
+**会话说明：**
+- 单聊和群聊共用同一个 Claude session
+- 无论在哪里发消息，Claude 都能记住上下文
+
+**飞书权限需要额外添加：**
+- `im:message.group_at_msg:readonly` — 接收群 @ 消息
+
 ## Slash 命令
 
 在飞书发送 `/命令` 可以快速执行操作：
@@ -65,121 +91,88 @@ larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 | `/pwd` | 当前目录 + 文件列表 |
 | `/ps` | 运行中的进程 |
 
-### 💬 Claude 快捷方式（展开为 prompt）
+### 💬 Claude 快捷方式
 
 | 命令 | 说明 |
 |------|------|
-| `/review` | 代码 review（安全性、性能、质量） |
-| `/fix` | 修复报错或测试失败 |
+| `/review` | 代码 review |
+| `/fix` | 修复报错 |
 | `/doc` | 生成/更新 README |
 | `/test [文件]` | 生成单元测试 |
-| `/explain [文件]` | 解释代码逻辑 |
-| `/refactor [文件]` | 重构代码 |
-| `/commit` | 生成 Conventional Commits 格式的 commit message |
+| `/explain [文件]` | 解释代码 |
+| `/refactor [文件]` | 重构 |
+| `/commit` | 生成 commit message |
 | `/pr` | 生成 PR 描述 |
-| `/todo` | 整理 TODO/FIXME 清单 |
+| `/todo` | 整理 TODO 清单 |
 | `/summary` | 生成工作日报 |
-| `/build [命令]` | 构建项目，报错自动修复 |
+| `/build` | 构建项目 |
 | `/install` | 安装依赖 |
 | `/run [script]` | 运行 npm script |
 | `/help` | 查看所有命令 |
 
 ### 自定义命令
 
-在 `~/.larkcc/config.yml` 的 `commands` 块配置：
-
 ```yaml
+# ~/.larkcc/config.yml
 commands:
   deploy: "按标准流程部署到测试环境，部署前先跑测试"
   standup: "总结今天的代码改动，生成简洁日报"
 ```
 
-使用：`/deploy` 或 `/standup`
-
 ## 任务控制
 
 ```
 你：帮我重构整个项目...
-  → Claude 开始执行
-
-你：/stop
-  → ⏹ 已发送中断信号，等待当前步骤完成...
+你：/stop  → ⏹ 已发送中断信号
 ```
 
-如果任务长时间无响应（超过 10 分钟），锁会自动释放，无需重启 larkcc。
+任务超过 10 分钟无响应自动释放锁，无需重启。
 
 ## 图片支持
 
-直接发图片给机器人，Claude 会自动分析图片内容：
+直接发图片，Claude 自动分析：
 
 ```
 你：[截图] 帮我实现这个界面
 你：[报错截图] 这个怎么修
-你：[设计稿] 按这个写组件
 ```
 
-## 多机器人支持
-
-每个机器人是一个 profile：
+## 多机器人
 
 ```bash
-larkcc --new-profile
-# ? Feishu App ID: cli_bot_xxx
-# ? Feishu App Secret: xxxxxxxx
-# ? Profile name (blank to auto-generate): mybot
-# ✅ Profile "mybot" saved
-
-larkcc --list-profiles
-# Available profiles:
-#   default          cli_a93e...  (default)
-#   mybot            cli_bot_b...
-
-larkcc -p mybot
+larkcc --new-profile        # 新增机器人
+larkcc --list-profiles      # 查看所有机器人
+larkcc -p mybot             # 使用指定机器人
 ```
 
 ### Open ID 自动检测
 
-setup 时不需要填 open_id，启动后发一条消息自动保存：
-
-```
-larkcc
-ℹ  Owner: (pending first message)
-← 发一条消息 →
-✅ Auto-detected open_id: ou_xxx
-```
+setup 不需要填 open_id，发第一条消息自动保存。
 
 ### 重复启动检测
 
-同一机器人在其他项目运行时会提示：
-
-```
-⚠  Already running!
-  PID:     12345
-  Project: /other/project
-  Started: 2026-03-16T09:30:00.000Z
-
-  Continue anyway? (y/n):
-```
+同一机器人在其他项目运行时提示确认，避免意外顶掉。
 
 ## 飞书侧体验
 
-- ✅ 启动/断开时收到通知
-- 👌 收到消息打 reaction，完成后换成 DONE
-- 💬 所有回复引用你的原始消息
+- ✅ 启动/断开通知
+- 👌 处理中打 reaction，完成换 DONE
+- 💬 回复引用原消息
 - ⚡ 工具调用实时展示
-- 📋 最终回复 Markdown 卡片渲染
-- 🖼 支持图片消息，Claude 直接分析
-- ⌨️ 支持 `/命令` 快捷操作
-- ⏹ `/stop` 随时中断任务
+- 📋 Markdown 卡片渲染
+- 🖼 图片理解
+- ⌨️ Slash 命令
+- ⏹ `/stop` 中断任务
+- 👥 群聊 @ 触发
 
 ## 消息类型支持
 
-| 消息类型 | 支持 |
-|---------|------|
-| 普通文本 | ✅ |
-| 富文本（大输入框，带标题） | ✅ |
-| 图片 | ✅ |
-| 其他类型 | 忽略 |
+| 类型 | 单聊 | 群聊 |
+|------|------|------|
+| 普通文本 | ✅ | ✅（需 @） |
+| 富文本 | ✅ | ✅（需 @） |
+| 图片 | ✅ | ✅（需 @） |
+| 引用回复 | ✅ | ✅ |
 
 ## 配置文件
 
@@ -202,20 +195,19 @@ claude:
     - Grep
     - LS
 
-commands:                      # 自定义 slash 命令（可选）
+commands:
   deploy: "部署到测试环境"
-  standup: "生成工作日报"
 
-profiles:                      # 其他机器人（可选）
+profiles:
   mybot:
     feishu:
       app_id: cli_bot_xxx
       app_secret: xxxxxxxxxxxxxxxx
 ```
 
-### 自定义 API（火山引擎/其他兼容接口）
+### 自定义 API
 
-在 `~/.claude/settings.json` 配置，larkcc 启动时自动读取：
+`~/.claude/settings.json`：
 
 ```json
 {
@@ -230,42 +222,30 @@ profiles:                      # 其他机器人（可选）
 
 ## 飞书开放平台配置
 
-> ⚠️ 修改权限或配置后，必须**创建新版本并发布**，否则不生效。
+> ⚠️ 改完权限必须**创建新版本并发布**
 
 ### 权限
 
 | 权限 | 用途 |
 |------|------|
-| `im:message` | 基础消息权限 |
+| `im:message` | 基础消息 |
 | `im:message:send_as_bot` | 发送消息 |
-| `im:message.p2p_msg:readonly` | 接收私聊消息 |
+| `im:message.p2p_msg:readonly` | 接收私聊 |
+| `im:message.group_at_msg:readonly` | 接收群 @ 消息 |
 | `im:message.reactions:write_only` | 打 reaction |
-| `cardkit:card:write` | 发送卡片消息 |
+| `cardkit:card:write` | 发送卡片 |
 
 ### 事件订阅
 
-事件与回调 → 订阅方式选**使用长连接** → 添加事件 `im.message.receive_v1`
+使用**长连接** → 订阅 `im.message.receive_v1`
 
 ## 状态文件
 
 | 文件 | 说明 |
 |------|------|
-| `~/.larkcc/config.yml` | 配置（含所有 profiles 和自定义命令） |
-| `~/.larkcc/state.json` | 默认机器人的 chat_id 和 session_id |
-| `~/.larkcc/state-{profile}.json` | 各 profile 的状态 |
-| `~/.larkcc/lock-default.json` | 默认机器人的进程锁 |
-| `~/.larkcc/lock-{profile}.json` | 各 profile 的进程锁 |
-| `~/.claude.json` | Claude onboarding 状态（自动创建） |
-
-## 工具展示
-
-| 工具 | 展示 |
-|------|------|
-| Read | 📂 读取文件 |
-| Write / Edit | ✏️ 写入/编辑文件 |
-| Bash | ⚡ 执行命令 |
-| Glob / Grep | 🔍 查找文件/搜索内容 |
-| LS | 📁 列出目录 |
-| AskUserQuestion | 💬 直接发问题给你 |
-| ExitPlanMode / TodoWrite / TodoRead | 静默处理 |
-| 其他 | 🔧 工具名（降级展示） |
+| `~/.larkcc/config.yml` | 配置 |
+| `~/.larkcc/state.json` | 默认机器人状态 |
+| `~/.larkcc/state-{profile}.json` | 各 profile 状态 |
+| `~/.larkcc/lock-default.json` | 进程锁 |
+| `~/.larkcc/lock-{profile}.json` | 各 profile 进程锁 |
+| `~/.claude.json` | Claude onboarding（自动创建） |
