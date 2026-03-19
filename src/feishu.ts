@@ -52,28 +52,52 @@ export async function updateText(
   });
 }
 
-// 最终回复卡片，超长截断，卡片失败 fallback 到普通文本
+// 最终回复卡片，超长分段发送，卡片失败 fallback 到普通文本
+const CHUNK_SIZE = 2800;
+
+function splitMarkdown(text: string, size: number): string[] {
+  if (text.length <= size) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= size) {
+      chunks.push(remaining);
+      break;
+    }
+    // 尝试在换行处分割
+    let cut = remaining.lastIndexOf("\n", size);
+    if (cut < size * 0.5) cut = remaining.lastIndexOf(" ", size);
+    if (cut < size * 0.5) cut = size;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  return chunks;
+}
+
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   markdown: string
 ): Promise<void> {
-  const truncated = markdown.length > 3000
-    ? markdown.slice(0, 3000) + "\n\n...(内容过长已截断)"
-    : markdown;
-  try {
-    const card = buildMarkdownCard(truncated);
-    await (client.im.message as any).reply({
-      path: { message_id: rootMsgId },
-      data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
-    });
-  } catch {
-    // 卡片失败 fallback 到普通文本
-    await (client.im.message as any).reply({
-      path: { message_id: rootMsgId },
-      data: { content: JSON.stringify({ text: truncated }), msg_type: "text", reply_in_thread: false },
-    });
+  const chunks = splitMarkdown(markdown, CHUNK_SIZE);
+  for (let i = 0; i < chunks.length; i++) {
+    const content = chunks.length > 1
+      ? `**(${i + 1}/${chunks.length})**\n${chunks[i]}`
+      : chunks[i];
+    try {
+      const card = buildMarkdownCard(content);
+      await (client.im.message as any).reply({
+        path: { message_id: rootMsgId },
+        data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+      });
+    } catch {
+      // 卡片失败 fallback 到普通文本
+      await (client.im.message as any).reply({
+        path: { message_id: rootMsgId },
+        data: { content: JSON.stringify({ text: content }), msg_type: "text", reply_in_thread: false },
+      });
+    }
   }
 }
 

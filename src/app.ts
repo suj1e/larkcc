@@ -237,13 +237,28 @@ export async function startApp(
           const raw  = JSON.parse(msg.content);
           const post = raw.zh_cn ?? raw;
           const title  = stripHtml(post.title ?? "");
-          const blocks: Array<Array<{ tag: string; text?: string }>> = post.content ?? [];
+          const blocks: Array<Array<{ tag: string; text?: string; image_key?: string }>> = post.content ?? [];
+
+          // 提取文字内容
           const lines  = blocks.map(line =>
             line.map(el => stripHtml(el.text ?? "")).join("").trim()
           ).filter(Boolean);
           const body = lines.join("\n").trim();
           text = isGroup ? stripMentions([title, body].filter(Boolean).join("\n").trim())
                          : [title, body].filter(Boolean).join("\n").trim();
+
+          // 提取富文本中的图片
+          for (const line of blocks) {
+            for (const el of line) {
+              if (el.tag === "img" && el.image_key) {
+                logger.dim(`downloading image from post: ${el.image_key}`);
+                const img = await downloadImage(client, msg.message_id, el.image_key);
+                if (img) {
+                  images.push(img);
+                }
+              }
+            }
+          }
         } else if (msg.message_type === "image") {
           const imageKey = (JSON.parse(msg.content) as { image_key?: string }).image_key;
           if (imageKey) {
