@@ -165,7 +165,7 @@ setup 不需要填 open_id，发第一条消息自动保存。
 - 💬 回复引用原消息
 - ⚡ 工具调用实时展示
 - 📋 Markdown 卡片渲染
-- 📄 超长消息自动分段发送
+- 📄 超长消息支持分段发送或写入云文档
 - 🖼 图片理解（支持富文本多图）
 - ⌨️ Slash 命令
 - ⏹ `/stop` 中断任务
@@ -202,6 +202,16 @@ claude:
     - Grep
     - LS
 
+# 超长消息处理配置
+overflow:
+  mode: document              # chunk（分片发送）或 document（写入云文档）
+  chunk:
+    threshold: 2800           # 分片阈值
+  document:
+    threshold: 2800           # 写文档阈值
+    folder_token: "fldcnxxxxxx"  # 云文档文件夹 token（必填，从云文档 URL 复制）
+    title_template: "{cwd} - {session_id} - {datetime}"
+
 commands:
   deploy: "部署到测试环境"
 
@@ -211,6 +221,32 @@ profiles:
       app_id: cli_bot_xxx
       app_secret: xxxxxxxxxxxxxxxx
 ```
+
+### 超长消息处理
+
+当回复内容超过阈值时，支持两种处理方式：
+
+| 模式 | 说明 |
+|------|------|
+| `chunk` | 分片发送，每片带页码 |
+| `document` | 写入飞书云文档，回复文档链接 |
+
+**文档模式配置：**
+
+1. 在飞书云空间创建一个文件夹用于存放文档
+2. 从文件夹 URL 复制 token（如 `https://feishu.cn/drive/folder/fldcnxxxxxx` 中的 `fldcnxxxxxx`）
+3. 将 token 填入 `overflow.document.folder_token`
+
+**标题模板占位符：**
+- `{cwd}` - 当前工作目录
+- `{session_id}` - Claude 会话 ID
+- `{datetime}` - 日期时间（2026-03-22 14:30:00）
+- `{date}` - 日期（2026-03-22）
+- `{profile}` - 机器人配置名
+
+**文档格式：**
+- 文档开头附带原消息链接，方便追溯
+- 支持 Markdown 格式（标题、代码块、列表等）
 
 ### 自定义 API
 
@@ -241,6 +277,8 @@ profiles:
 | `im:message.group_at_msg:readonly` | 接收群 @ 消息 |
 | `im:message.reactions:write_only` | 打 reaction |
 | `cardkit:card:write` | 发送卡片 |
+| `docs:doc` | 创建/编辑云文档（超长消息写入） |
+| `drive:drive` | 访问云空间（超长消息写入） |
 
 ### 事件订阅
 

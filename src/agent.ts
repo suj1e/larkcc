@@ -52,7 +52,8 @@ export async function runAgent(
   chatId: string,
   rootMsgId: string,
   images?: ImageInput[],
-  abortSignal?: AbortSignal   // 可选中断信号
+  abortSignal?: AbortSignal,   // 可选中断信号
+  profile?: string              // 机器人配置名
 ): Promise<void> {
   const sessionId = getSession();
 
@@ -84,7 +85,16 @@ export async function runAgent(
     // 检查是否已中断
     if (abortSignal?.aborted) {
       logger.info("Agent aborted by user");
-      await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断");
+      await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", {
+        profile: profile ?? "default",
+        cwd,
+        sessionId: getSession() ?? "",
+        overflow: config.overflow!,
+        chatId,
+        rootMsgId,
+        appId: config.feishu.app_id,
+        appSecret: config.feishu.app_secret,
+      });
       break;
     }
 
@@ -108,7 +118,16 @@ export async function runAgent(
           if (block.name === "AskUserQuestion") {
             const input = block.input as { questions?: Array<{ question: string }> };
             const questions = input.questions?.map(q => q.question).join("\n") ?? "";
-            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions);
+            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions, {
+              profile: profile ?? "default",
+              cwd,
+              sessionId: getSession() ?? "",
+              overflow: config.overflow!,
+              chatId,
+              rootMsgId,
+              appId: config.feishu.app_id,
+              appSecret: config.feishu.app_secret,
+            });
             break;
           }
           const detail = formatInput(block.name, block.input ?? {});
@@ -145,7 +164,16 @@ export async function runAgent(
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
       if (textBuffer) {
-        await replyFinalCard(client, chatId, rootMsgId, textBuffer);
+        await replyFinalCard(client, chatId, rootMsgId, textBuffer, {
+          profile: profile ?? "default",
+          cwd,
+          sessionId: getSession() ?? "",
+          overflow: config.overflow!,
+          chatId,
+          rootMsgId,
+          appId: config.feishu.app_id,
+          appSecret: config.feishu.app_secret,
+        });
       }
       logger.reply(chatId);
     }

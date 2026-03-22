@@ -337,7 +337,7 @@ export async function startApp(
         } catch {}
 
         try {
-          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal);
+          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },

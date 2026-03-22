@@ -9,12 +9,23 @@ export interface FeishuConfig {
   owner_open_id: string;
 }
 
+export interface OverflowConfig {
+  mode: "chunk" | "document";
+  chunk: { threshold: number };
+  document: {
+    threshold: number;
+    folder_token: string;
+    title_template: string;
+  };
+}
+
 export interface ProfileConfig {
   feishu: FeishuConfig;
   claude: {
     permission_mode?: "acceptEdits" | "auto" | "default";
     allowed_tools?: string[];
   };
+  overflow?: OverflowConfig;
 }
 
 export interface LarkccConfig extends ProfileConfig {}
@@ -22,12 +33,23 @@ export interface LarkccConfig extends ProfileConfig {}
 export interface RawConfig {
   feishu: FeishuConfig;          // default profile
   claude?: ProfileConfig["claude"];
+  overflow?: OverflowConfig;
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
 const DEFAULT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"];
 const GLOBAL_CONFIG_PATH = path.join(os.homedir(), ".larkcc", "config.yml");
 const PROJECT_CONFIG_NAME = ".larkcc.yml";
+
+const DEFAULT_OVERFLOW: OverflowConfig = {
+  mode: "document",
+  chunk: { threshold: 2800 },
+  document: {
+    threshold: 2800,
+    folder_token: "",
+    title_template: "{cwd} - {session_id} - {datetime}",
+  },
+};
 
 function loadYml(filePath: string): any {
   if (!fs.existsSync(filePath)) return null;
@@ -45,12 +67,14 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
   // 选择 profile
   let feishu: FeishuConfig;
   let claude = raw.claude ?? {};
+  let overflow: Partial<OverflowConfig> = raw.overflow ?? {};
 
   if (profile && profile !== "default") {
     const profileData = raw.profiles?.[profile];
     if (!profileData) throw new Error(`Profile "${profile}" not found. Run: larkcc --setup -p ${profile}`);
     feishu = { ...raw.feishu, ...profileData.feishu } as FeishuConfig;
     claude = { ...claude, ...profileData.claude };
+    overflow = { ...overflow, ...profileData.overflow };
   } else {
     feishu = raw.feishu;
   }
@@ -69,6 +93,15 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     claude: {
       permission_mode: claude.permission_mode ?? "acceptEdits",
       allowed_tools: claude.allowed_tools ?? DEFAULT_TOOLS,
+    },
+    overflow: {
+      mode: overflow.mode ?? DEFAULT_OVERFLOW.mode,
+      chunk: { threshold: overflow.chunk?.threshold ?? DEFAULT_OVERFLOW.chunk.threshold },
+      document: {
+        threshold: overflow.document?.threshold ?? DEFAULT_OVERFLOW.document.threshold,
+        folder_token: overflow.document?.folder_token ?? DEFAULT_OVERFLOW.document.folder_token,
+        title_template: overflow.document?.title_template ?? DEFAULT_OVERFLOW.document.title_template,
+      },
     },
   };
 }
@@ -132,6 +165,28 @@ export function saveOwnerOpenId(openId: string, profile?: string): void {
     if (!raw.profiles[profile]) raw.profiles[profile] = {};
     if (!raw.profiles[profile].feishu) raw.profiles[profile].feishu = {};
     raw.profiles[profile].feishu.owner_open_id = openId;
+  }
+
+  fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
+}
+
+// 保存云文档文件夹 token
+export function saveFolderToken(folderToken: string, profile?: string): void {
+  const dir = path.dirname(GLOBAL_CONFIG_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let raw: any = loadYml(GLOBAL_CONFIG_PATH) ?? {};
+
+  if (!profile || profile === "default") {
+    if (!raw.overflow) raw.overflow = {};
+    if (!raw.overflow.document) raw.overflow.document = {};
+    raw.overflow.document.folder_token = folderToken;
+  } else {
+    if (!raw.profiles) raw.profiles = {};
+    if (!raw.profiles[profile]) raw.profiles[profile] = {};
+    if (!raw.profiles[profile].overflow) raw.profiles[profile].overflow = {};
+    if (!raw.profiles[profile].overflow.document) raw.profiles[profile].overflow.document = {};
+    raw.profiles[profile].overflow.document.folder_token = folderToken;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
