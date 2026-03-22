@@ -296,11 +296,8 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
       } else {
         inCodeBlock = false;
         blocks.push({
-          block_type: 4, // code block
-          code: {
-            style: { language: codeLang || "plain" },
-            elements: [{ text_run: { content: codeContent.join("\n") } }],
-          },
+          block_type: 2, // code block (use 2 for text, simpler)
+          text: { elements: [{ text_run: { content: "```\n" + codeContent.join("\n") + "\n```" } }] },
         });
       }
       continue;
@@ -311,27 +308,27 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
       continue;
     }
 
-    // 标题处理
+    // 标题处理（使用 heading1/heading2/heading3）
     if (line.startsWith("### ")) {
       blocks.push({
-        block_type: 3, // heading
-        heading: { level: 3, elements: [{ text_run: { content: line.slice(4) } }] },
+        block_type: 3,
+        heading3: { elements: [{ text_run: { content: line.slice(4) } }] },
       });
     } else if (line.startsWith("## ")) {
       blocks.push({
         block_type: 3,
-        heading: { level: 2, elements: [{ text_run: { content: line.slice(3) } }] },
+        heading2: { elements: [{ text_run: { content: line.slice(3) } }] },
       });
     } else if (line.startsWith("# ")) {
       blocks.push({
         block_type: 3,
-        heading: { level: 1, elements: [{ text_run: { content: line.slice(2) } }] },
+        heading1: { elements: [{ text_run: { content: line.slice(2) } }] },
       });
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
       // 无序列表
       blocks.push({
-        block_type: 5, // bullet_list
-        bullet_list: { elements: [{ text_run: { content: line.slice(2) } }] },
+        block_type: 4, // bullet_list (block_type 4 is bullet)
+        bullet: { elements: [{ text_run: { content: line.slice(2) } }] },
       });
     } else if (line.trim() === "---") {
       // 分隔线 - 跳过
