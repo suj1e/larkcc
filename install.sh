@@ -53,6 +53,8 @@ success "Node.js v$(node --version)"
 
 # ── 检测 pnpm ─────────────────────────────────────────────────
 info "Checking pnpm..."
+# 禁用 corepack 避免签名验证问题
+corepack disable 2>/dev/null || true
 if ! command -v pnpm &>/dev/null; then
   warn "pnpm not found, installing..."
   npm install -g pnpm
