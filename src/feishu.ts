@@ -165,11 +165,28 @@ async function replyWithDocument(
       // 获取失败时忽略
     }
 
+    // 清理旧文档（如果启用）
+    let cleanupResult: { deleted: number; failed: number } | null = null;
+    const cleanupConfig = context.overflow.document.cleanup;
+    if (cleanupConfig?.enabled) {
+      cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs);
+    }
+
     // 创建文档（在应用云空间）
     const docUrl = await createOverflowDocument(token, title, markdown, originalMessage);
 
+    // 构建回复消息
+    let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
+    if (cleanupConfig?.notify && cleanupResult && (cleanupResult.deleted > 0 || cleanupResult.failed > 0)) {
+      if (cleanupResult.failed > 0) {
+        replyMsg += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档，${cleanupResult.failed} 个删除失败`;
+      } else {
+        replyMsg += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档（保留最近 ${cleanupConfig.max_docs} 个）`;
+      }
+    }
+
     // 回复文档链接
-    await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
+    await sendMessageChunk(client, rootMsgId, replyMsg);
   } catch (error) {
     // 写文档失败，回退到分片发送
     console.error("Failed to create document:", error);
@@ -745,4 +762,107 @@ async function getTenantAccessToken(appId: string, appSecret: string): Promise<s
  */
 function buildMessageLink(chatId: string, messageId: string): string {
   return `https://feishu.cn/client/chat/open?openChatId=${chatId}&openMessageId=${messageId}`;
+}
+
+/**
+ * 清理旧文档
+ * 列出应用云空间中的文档，按创建时间排序，删除超出数量的旧文档
+ */
+async function cleanupOldDocuments(
+  token: string,
+  maxDocs: number
+): Promise<{ deleted: number; failed: number }> {
+  const result = { deleted: 0, failed: 0 };
+
+  try {
+    // 1. 获取应用云空间的 folder_token
+    const appFolderRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/roots/app", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+    const appFolderData = await safeJsonParse(appFolderRes, "Get app folder") as {
+      data?: { folder?: { token?: string } };
+      code?: number;
+    };
+
+    if (appFolderData.code !== 0 || !appFolderData.data?.folder?.token) {
+      console.error("Failed to get app folder:", appFolderData);
+      return result;
+    }
+
+    const folderToken = appFolderData.data.folder.token;
+
+    // 2. 列出文件夹中的文档
+    const files: Array<{ token: string; created_time: string }> = [];
+    let pageToken: string | undefined;
+
+    do {
+      const listUrl = new URL("https://open.feishu.cn/open-apis/drive/v1/files");
+      listUrl.searchParams.set("folder_token", folderToken);
+      listUrl.searchParams.set("page_size", "50");
+      if (pageToken) {
+        listUrl.searchParams.set("page_token", pageToken);
+      }
+
+      const listRes = await fetch(listUrl.toString(), {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+      const listData = await safeJsonParse(listRes, "List files") as {
+        data?: {
+          files?: Array<{ token: string; type: string; created_time: string }>;
+          next_page_token?: string;
+        };
+        code?: number;
+      };
+
+      if (listData.code !== 0) {
+        console.error("Failed to list files:", listData);
+        break;
+      }
+
+      // 只收集 docx 类型的文件
+      for (const file of listData.data?.files ?? []) {
+        if (file.type === "docx" || file.type === "doc") {
+          files.push({ token: file.token, created_time: file.created_time });
+        }
+      }
+
+      pageToken = listData.data?.next_page_token;
+    } while (pageToken);
+
+    // 3. 按创建时间排序（降序，最新的在前）
+    files.sort((a, b) => new Date(b.created_time).getTime() - new Date(a.created_time).getTime());
+
+    // 4. 删除超出数量的旧文档
+    const toDelete = files.slice(maxDocs);
+    for (const file of toDelete) {
+      try {
+        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${file.token}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        });
+        const deleteData = await safeJsonParse(deleteRes, "Delete file") as { code?: number };
+
+        if (deleteData.code === 0) {
+          result.deleted++;
+        } else {
+          result.failed++;
+          console.error(`Failed to delete file ${file.token}:`, deleteData);
+        }
+      } catch {
+        result.failed++;
+      }
+    }
+  } catch (error) {
+    console.error("Cleanup error:", error);
+  }
+
+  return result;
 }

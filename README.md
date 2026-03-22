@@ -249,8 +249,28 @@ profiles:
 - `{profile}` - 机器人配置名
 
 **文档格式：**
-- 文档开头附带原消息链接，方便追溯
+- 文档开头附带原消息引用，方便追溯
 - 支持 Markdown 格式（标题、代码块、列表等）
+
+**自动清理：**
+
+创建新文档时，会自动清理超出数量的旧文档：
+
+```yaml
+overflow:
+  mode: document
+  document:
+    threshold: 2800
+    title_template: "{cwd} - {session_id} - {datetime}"
+    cleanup:
+      enabled: true       # 是否启用自动清理
+      max_docs: 50        # 最大保留文档数
+      notify: true        # 清理时是否通知
+```
+
+- 按创建时间排序，保留最新的 `max_docs` 个文档
+- 清理成功会在回复消息中附带通知
+- 删除失败会忽略并继续，不影响正常流程
 
 ### 自定义 API
 

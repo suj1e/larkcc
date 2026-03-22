@@ -9,12 +9,19 @@ export interface FeishuConfig {
   owner_open_id: string;
 }
 
+export interface CleanupConfig {
+  enabled: boolean;    // 是否启用自动清理
+  max_docs: number;    // 最大保留文档数
+  notify: boolean;     // 清理时是否通知
+}
+
 export interface OverflowConfig {
   mode: "chunk" | "document";
   chunk: { threshold: number };
   document: {
     threshold: number;
     title_template: string;
+    cleanup: CleanupConfig;
   };
 }
 
@@ -46,6 +53,11 @@ const DEFAULT_OVERFLOW: OverflowConfig = {
   document: {
     threshold: 2800,
     title_template: "{cwd} - {session_id} - {datetime}",
+    cleanup: {
+      enabled: true,
+      max_docs: 50,
+      notify: true,
+    },
   },
 };
 
@@ -98,6 +110,11 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       document: {
         threshold: overflow.document?.threshold ?? DEFAULT_OVERFLOW.document.threshold,
         title_template: overflow.document?.title_template ?? DEFAULT_OVERFLOW.document.title_template,
+        cleanup: {
+          enabled: overflow.document?.cleanup?.enabled ?? DEFAULT_OVERFLOW.document.cleanup.enabled,
+          max_docs: overflow.document?.cleanup?.max_docs ?? DEFAULT_OVERFLOW.document.cleanup.max_docs,
+          notify: overflow.document?.cleanup?.notify ?? DEFAULT_OVERFLOW.document.cleanup.notify,
+        },
       },
     },
   };
@@ -130,6 +147,12 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   // 添加默认 overflow 配置（首次创建时）
   if (!raw.overflow) {
     raw.overflow = DEFAULT_OVERFLOW;
+  }
+
+  // 确保 cleanup 配置存在（兼容旧配置）
+  if (!raw.overflow.document?.cleanup) {
+    raw.overflow.document = raw.overflow.document || {};
+    raw.overflow.document.cleanup = DEFAULT_OVERFLOW.document.cleanup;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
