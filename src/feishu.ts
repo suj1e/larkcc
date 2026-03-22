@@ -1,5 +1,5 @@
 import * as lark from "@larksuiteoapi/node-sdk";
-import { OverflowConfig, saveFolderToken } from "./config.js";
+import { OverflowConfig } from "./config.js";
 
 export function createLarkClient(appId: string, appSecret: string) {
   return new lark.Client({ appId, appSecret });
@@ -135,12 +135,29 @@ async function replyWithDocument(
   markdown: string,
   context: ReplyContext
 ): Promise<void> {
+  // 检查 folder_token 是否配置
+  const folderToken = context.overflow.document.folder_token;
+  if (!folderToken) {
+    await sendMessageChunk(client, rootMsgId, `❌ 未配置云文档文件夹，请按以下步骤配置：
+
+1. 在飞书"我的空间"创建文件夹（如 larkcc）
+2. 打开文件夹，从 URL 复制 token
+   例如：https://feishu.cn/drive/folder/fldcnXXXX → fldcnXXXX
+3. 配置到 ~/.larkcc/config.yml：
+   overflow.document.folder_token: "fldcnXXXX"
+
+暂时回退到分片发送`);
+    const chunks = splitMarkdown(markdown, CHUNK_SIZE);
+    for (let i = 0; i < chunks.length; i++) {
+      const content = `**(${i + 1}/${chunks.length})**\n${chunks[i]}`;
+      await sendMessageChunk(client, rootMsgId, content);
+    }
+    return;
+  }
+
   try {
     // 获取 token
     const token = await getTenantAccessToken(context.appId, context.appSecret);
-
-    // 获取 folder_token（可能为空，会自动创建）
-    const folderToken = context.overflow.document.folder_token;
 
     // 构建文档标题
     const now = new Date();
@@ -155,8 +172,8 @@ async function replyWithDocument(
     // 构建消息链接
     const messageLink = buildMessageLink(chatId, rootMsgId);
 
-    // 创建文档（会自动创建文件夹）
-    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink, context.profile);
+    // 创建文档
+    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink);
 
     // 回复文档链接
     await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
@@ -277,49 +294,6 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
 }
 
 /**
- * 获取或创建 larkcc 文件夹
- * 如果 folder_token 未配置，自动在"我的空间"创建 larkcc 文件夹
- */
-async function getOrCreateFolder(token: string, profile: string): Promise<string> {
-  const folderName = `larkcc${profile && profile !== "default" ? `-${profile}` : ""}`;
-
-  // 1. 查找现有文件夹
-  const searchRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files?folder_type=my_space&search_key=${encodeURIComponent(folderName)}`, {
-    method: "GET",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-    },
-  });
-  const searchData = await safeJsonParse(searchRes, "Search folder") as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
-  const existing = searchData.data?.files?.find(f => f.name === folderName && f.type === "folder");
-  if (existing?.token) {
-    return existing.token;
-  }
-
-  // 2. 创建新文件夹（在我的空间根目录）
-  // 使用 drive/v1/files API，parent_token 为空表示根目录
-  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: folderName,
-      type: "folder",
-      parent_token: "",// 空字符串表示我的空间根目录
-    }),
-  });
-  const createData = await safeJsonParse(createRes, "Create folder") as { data?: { token?: string } };
-  if (createData.data?.token) {
-    return createData.data.token;
-  }
-
-  // 3. 如果创建失败，返回空字符串（文档将创建在根目录）
-  return "";
-}
-
-/**
  * 将 Markdown 文本转换为飞书文档块
  * 简化版本：按段落分割，保留代码块
  */
@@ -399,34 +373,20 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
 
 /**
  * 创建云文档并写入内容
- * 使用飞书 docx API，支持自动创建文件夹
+ * 使用飞书 docx API
  */
 export async function createOverflowDocument(
   token: string,
   folderToken: string,
   title: string,
   markdown: string,
-  messageLink: string,
-  profile?: string
+  messageLink: string
 ): Promise<string> {
   // 1. 将 markdown 转换为文档块
   const blocks = markdownToBlocks(markdown, messageLink);
 
-  // 2. 获取或创建文件夹
-  let targetFolder = folderToken;
-  if (!targetFolder) {
-    targetFolder = await getOrCreateFolder(token, profile ?? "default");
-    // 如果获取到新 token，保存到配置
-    if (targetFolder) {
-      saveFolderToken(targetFolder, profile);
-    }
-  }
-
-  // 3. 创建文档（使用 docx API）
-  const createBody: Record<string, string> = { title };
-  if (targetFolder) {
-    createBody.folder_token = targetFolder;
-  }
+  // 2. 创建文档
+  const createBody: Record<string, string> = { title, folder_token: folderToken };
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
     method: "POST",
     headers: {

@@ -209,7 +209,7 @@ overflow:
     threshold: 2800           # 分片阈值
   document:
     threshold: 2800           # 写文档阈值
-    folder_token: ""          # 可选，留空则自动在"我的空间"创建 larkcc 文件夹
+    folder_token: "fldcnXXXX" # 云文档文件夹 token（必填，从飞书云空间 URL 复制）
     title_template: "{cwd} - {session_id} - {datetime}"
 
 commands:
@@ -231,11 +231,12 @@ profiles:
 | `chunk` | 分片发送，每片带页码 |
 | `document` | 写入飞书云文档，回复文档链接 |
 
-**文档模式：**
+**文档模式配置：**
 
-- 首次使用时会在"我的空间"自动创建 `larkcc` 文件夹（多机器人则为 `larkcc-{profile}`）
-- 无需手动配置 `folder_token`，开箱即用
-- 如需指定其他文件夹，可从文件夹 URL 复制 token 填入配置
+1. 在飞书"我的空间"创建一个文件夹（如 `larkcc`）
+2. 打开文件夹，从浏览器 URL 复制 token
+   - 例如：`https://feishu.cn/drive/folder/fldcnXXXX` → `fldcnXXXX`
+3. 将 token 填入 `overflow.document.folder_token`
 
 **标题模板占位符：**
 - `{cwd}` - 当前工作目录
