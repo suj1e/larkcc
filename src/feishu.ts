@@ -822,7 +822,7 @@ async function cleanupOldDocuments(
 
   try {
     // 1. 获取应用云空间的 folder_token
-    const appFolderRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/roots/app", {
+    const appFolderRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/appFolder", {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
