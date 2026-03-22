@@ -273,19 +273,210 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
   }
 }
 
+// 飞书文档块类型常量（通过 API 测试验证）
+// 注意：飞书 API 的 block_type 与文档类型是一一对应的，不是用属性区分
+const BlockType = {
+  PAGE: 1,       // 页面
+  TEXT: 2,       // 文本
+  HEADING1: 3,   // 一级标题
+  HEADING2: 4,   // 二级标题
+  HEADING3: 5,   // 三级标题
+  BULLET: 12,    // 无序列表
+  ORDERED: 13,   // 有序列表
+  CODE: 14,      // 代码块
+  QUOTE: 15,     // 引用块
+  DIVIDER: 22,   // 分割线
+} as const;
+
+// 语言映射表（将常见语言名转换为飞书支持的语言编号）
+// 飞书语言编码参考 SDK types 定义
+const LanguageMap: Record<string, number> = {
+  // 默认/纯文本
+  "": 1,
+  "text": 1,
+  "plaintext": 1,
+  // 常见语言
+  "bash": 11,
+  "sh": 11,
+  "shell": 11,
+  "zsh": 11,
+  "c": 14,
+  "cmake": 15,
+  "csharp": 16,
+  "cs": 16,
+  "cpp": 17,
+  "c++": 17,
+  "cc": 17,
+  "cxx": 17,
+  "css": 21,
+  "dart": 22,
+  "dockerfile": 25,
+  "docker": 25,
+  "go": 34,
+  "golang": 34,
+  "groovy": 35,
+  "gradle": 35,
+  "html": 37,
+  "java": 39,
+  "javascript": 40,
+  "js": 40,
+  "jsx": 41,
+  "javascriptreact": 41,
+  "json": 42,
+  "kotlin": 44,
+  "kt": 44,
+  "kts": 44,
+  "latex": 45,
+  "tex": 45,
+  "less": 46,
+  "lua": 48,
+  "makefile": 49,
+  "make": 49,
+  "markdown": 50,
+  "md": 50,
+  "perl": 57,
+  "pl": 57,
+  "pm": 57,
+  "php": 58,
+  "powershell": 59,
+  "ps1": 59,
+  "pwsh": 59,
+  "python": 62,
+  "py": 62,
+  "r": 63,
+  "ruby": 64,
+  "rb": 64,
+  "rust": 65,
+  "rs": 65,
+  "scala": 68,
+  "scss": 70,
+  "sass": 67,
+  "sql": 72,
+  "swift": 73,
+  "typescript": 74,
+  "ts": 74,
+  "tsx": 75,
+  "typescriptreact": 75,
+  "xml": 77,
+  "yaml": 78,
+  "yml": 78,
+};
+
+/**
+ * 解析内联 Markdown 文本，支持粗体、斜体、行内代码、链接等
+ * 返回飞书文本元素数组
+ */
+function parseInlineText(text: string): any[] {
+  const elements: any[] = [];
+  let remaining = text;
+
+  // 正则表达式匹配各种内联元素（按优先级排序）
+  while (remaining.length > 0) {
+    // 链接 [text](url)
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+      elements.push({
+        text_run: {
+          content: linkMatch[1],
+          text_element_style: { link: { url: linkMatch[2] } },
+        },
+      });
+      remaining = remaining.slice(linkMatch[0].length);
+      continue;
+    }
+
+    // 粗体 **text**
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+    if (boldMatch) {
+      elements.push({
+        text_run: {
+          content: boldMatch[1],
+          text_element_style: { bold: true },
+        },
+      });
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+
+    // 行内代码 `code`
+    const codeMatch = remaining.match(/^`([^`]+)`/);
+    if (codeMatch) {
+      elements.push({
+        text_run: {
+          content: codeMatch[1],
+          text_element_style: { inline_code: true },
+        },
+      });
+      remaining = remaining.slice(codeMatch[0].length);
+      continue;
+    }
+
+    // 斜体 *text* 或 _text_（避免与粗体混淆）
+    const italicMatch = remaining.match(/^(?<!\*)\*([^*]+)\*(?!\*)|^(?<!_)_([^_]+)_(?!_)/);
+    if (italicMatch) {
+      const content = italicMatch[1] || italicMatch[2];
+      elements.push({
+        text_run: {
+          content,
+          text_element_style: { italic: true },
+        },
+      });
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+
+    // 删除线 ~~text~~
+    const strikeMatch = remaining.match(/^~~([^~]+)~~/);
+    if (strikeMatch) {
+      elements.push({
+        text_run: {
+          content: strikeMatch[1],
+          text_element_style: { strikethrough: true },
+        },
+      });
+      remaining = remaining.slice(strikeMatch[0].length);
+      continue;
+    }
+
+    // 查找下一个特殊字符的位置
+    const nextSpecial = remaining.search(/[*_`~\[]/);
+    if (nextSpecial === -1) {
+      // 没有更多特殊字符，添加剩余文本
+      if (remaining) {
+        elements.push({ text_run: { content: remaining } });
+      }
+      break;
+    } else if (nextSpecial > 0) {
+      // 添加特殊字符前的普通文本
+      elements.push({ text_run: { content: remaining.slice(0, nextSpecial) } });
+      remaining = remaining.slice(nextSpecial);
+    } else {
+      // 特殊字符在开头但无法匹配任何模式，作为普通字符处理
+      elements.push({ text_run: { content: remaining[0] } });
+      remaining = remaining.slice(1);
+    }
+  }
+
+  return elements.length > 0 ? elements : [{ text_run: { content: "" } }];
+}
+
 /**
  * 将 Markdown 文本转换为飞书文档块
- * 支持标题、代码块和文本
+ * 支持标题、代码块、列表、引用和文本
  */
 function markdownToBlocks(markdown: string, messageLink: string): any[] {
   const blocks: any[] = [];
-  const header = `📎 查看原消息：${messageLink}\n\n---`;
 
-  // 添加头部
+  // 添加头部链接
   blocks.push({
-    block_type: 2,
-    text: { elements: [{ text_run: { content: header } }] },
+    block_type: BlockType.TEXT,
+    text: {
+      elements: [{ text_run: { content: `📎 查看原消息：${messageLink}` } }],
+    },
   });
+
+  // 添加分割线
+  blocks.push({ block_type: BlockType.DIVIDER, divider: {} });
 
   // 处理 markdown 内容
   const lines = markdown.split("\n");
@@ -298,29 +489,54 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
     if (currentPara.length > 0) {
       const content = currentPara.join("\n").trim();
       if (content) {
+        // 解析内联 Markdown 格式
+        const elements = parseInlineText(content);
         blocks.push({
-          block_type: 2,
-          text: { elements: [{ text_run: { content } }] },
+          block_type: BlockType.TEXT,
+          text: { elements },
         });
       }
       currentPara = [];
     }
   };
 
-  for (const line of lines) {
+  // 处理列表项
+  const flushListItem = (item: string, isOrdered: boolean, _number?: number) => {
+    const trimmed = item.trim();
+    if (!trimmed) return;
+
+    const blockType = isOrdered ? BlockType.ORDERED : BlockType.BULLET;
+    const property = isOrdered ? "ordered" : "bullet";
+
+    // 解析内联 Markdown 格式
+    const elements = parseInlineText(trimmed);
+    blocks.push({
+      block_type: blockType,
+      [property]: { elements },
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
     // 代码块处理
     if (line.startsWith("```")) {
       if (!inCodeBlock) {
         flushPara();
         inCodeBlock = true;
-        codeLang = line.slice(3).trim();
+        codeLang = line.slice(3).trim().toLowerCase();
         codeContent = [];
       } else {
-        // 代码块结束，添加到 blocks
+        // 代码块结束，创建原生代码块
         const code = codeContent.join("\n");
+        const langId = LanguageMap[codeLang] ?? 1;
+
         blocks.push({
-          block_type: 2,
-          text: { elements: [{ text_run: { content: `\`\`\`${codeLang}\n${code}\n\`\`\`` } }] },
+          block_type: BlockType.CODE,
+          code: {
+            style: { language: langId, wrap: true },
+            elements: [{ text_run: { content: code } }],
+          },
         });
         inCodeBlock = false;
         codeContent = [];
@@ -334,25 +550,65 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
       continue;
     }
 
-    // 标题处理
+    // 引用块处理 (> 开头)
+    if (line.startsWith("> ")) {
+      flushPara();
+      const quoteContent = line.slice(2).trim();
+      if (quoteContent) {
+        const elements = parseInlineText(quoteContent);
+        blocks.push({
+          block_type: BlockType.QUOTE,
+          quote: { elements },
+        });
+      }
+      continue;
+    }
+
+    // 无序列表处理 (- 或 * 开头)
+    const bulletMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushPara();
+      flushListItem(bulletMatch[2], false);
+      continue;
+    }
+
+    // 有序列表处理 (数字. 开头)
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+    if (orderedMatch) {
+      flushPara();
+      flushListItem(orderedMatch[3], true, parseInt(orderedMatch[2]));
+      continue;
+    }
+
+    // 标题处理（每种标题使用不同的 block_type）
     if (line.startsWith("### ")) {
       flushPara();
+      const headingContent = line.slice(4);
+      const elements = parseInlineText(headingContent);
       blocks.push({
-        block_type: 3,
-        heading3: { elements: [{ text_run: { content: line.slice(4) } }] },
+        block_type: BlockType.HEADING3,
+        heading3: { elements },
       });
     } else if (line.startsWith("## ")) {
       flushPara();
+      const headingContent = line.slice(3);
+      const elements = parseInlineText(headingContent);
       blocks.push({
-        block_type: 3,
-        heading2: { elements: [{ text_run: { content: line.slice(3) } }] },
+        block_type: BlockType.HEADING2,
+        heading2: { elements },
       });
     } else if (line.startsWith("# ")) {
       flushPara();
+      const headingContent = line.slice(2);
+      const elements = parseInlineText(headingContent);
       blocks.push({
-        block_type: 3,
-        heading1: { elements: [{ text_run: { content: line.slice(2) } }] },
+        block_type: BlockType.HEADING1,
+        heading1: { elements },
       });
+    } else if (line.trim() === "---" || line.trim() === "***" || line.trim() === "___") {
+      // 分割线
+      flushPara();
+      blocks.push({ block_type: BlockType.DIVIDER, divider: {} });
     } else {
       currentPara.push(line);
     }
@@ -360,9 +616,14 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
 
   // 处理未结束的代码块
   if (inCodeBlock && codeContent.length > 0) {
+    const code = codeContent.join("\n");
+    const langId = LanguageMap[codeLang] ?? 0;
     blocks.push({
-      block_type: 2,
-      text: { elements: [{ text_run: { content: codeContent.join("\n") } }] },
+      block_type: BlockType.CODE,
+      code: {
+        style: { language: langId, wrap: true },
+        elements: [{ text_run: { content: code } }],
+      },
     });
   }
 
