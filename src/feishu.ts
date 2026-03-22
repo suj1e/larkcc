@@ -275,72 +275,19 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
 
 /**
  * 将 Markdown 文本转换为飞书文档块
- * 简化版本：按段落分割，保留代码块
+ * 简化版本：全部使用文本块，避免复杂的块类型格式问题
  */
 function markdownToBlocks(markdown: string, messageLink: string): any[] {
   const blocks: any[] = [];
   const content = `📎 查看原消息：${messageLink}\n\n---\n\n${markdown}`;
 
-  const lines = content.split("\n");
-  let inCodeBlock = false;
-  let codeContent: string[] = [];
-  let codeLang = "";
-
-  for (const line of lines) {
-    // 代码块处理
-    if (line.startsWith("```")) {
-      if (!inCodeBlock) {
-        inCodeBlock = true;
-        codeLang = line.slice(3).trim();
-        codeContent = [];
-      } else {
-        inCodeBlock = false;
-        blocks.push({
-          block_type: 2, // code block (use 2 for text, simpler)
-          text: { elements: [{ text_run: { content: "```\n" + codeContent.join("\n") + "\n```" } }] },
-        });
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeContent.push(line);
-      continue;
-    }
-
-    // 标题处理（使用 heading1/heading2/heading3）
-    if (line.startsWith("### ")) {
-      blocks.push({
-        block_type: 3,
-        heading3: { elements: [{ text_run: { content: line.slice(4) } }] },
-      });
-    } else if (line.startsWith("## ")) {
-      blocks.push({
-        block_type: 3,
-        heading2: { elements: [{ text_run: { content: line.slice(3) } }] },
-      });
-    } else if (line.startsWith("# ")) {
-      blocks.push({
-        block_type: 3,
-        heading1: { elements: [{ text_run: { content: line.slice(2) } }] },
-      });
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      // 无序列表
-      blocks.push({
-        block_type: 4, // bullet_list (block_type 4 is bullet)
-        bullet: { elements: [{ text_run: { content: line.slice(2) } }] },
-      });
-    } else if (line.trim() === "---") {
-      // 分隔线 - 跳过
-      continue;
-    } else if (line.trim() === "") {
-      // 空行 - 跳过
-      continue;
-    } else {
-      // 普通文本
+  // 按段落分割，每段作为一个文本块
+  const paragraphs = content.split("\n\n");
+  for (const para of paragraphs) {
+    if (para.trim()) {
       blocks.push({
         block_type: 2, // text
-        text: { elements: [{ text_run: { content: line } }] },
+        text: { elements: [{ text_run: { content: para.trim() } }] },
       });
     }
   }
