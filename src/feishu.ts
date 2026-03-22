@@ -275,7 +275,7 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
 
 /**
  * 将 Markdown 文本转换为飞书文档块
- * 支持标题和文本，保留 markdown 格式
+ * 支持标题、代码块和文本
  */
 function markdownToBlocks(markdown: string, messageLink: string): any[] {
   const blocks: any[] = [];
@@ -290,41 +290,65 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
   // 处理 markdown 内容
   const lines = markdown.split("\n");
   let currentPara: string[] = [];
+  let inCodeBlock = false;
+  let codeContent: string[] = [];
+  let codeLang = "";
 
-  for (const line of lines) {
-    // 标题处理
-    if (line.startsWith("### ")) {
-      if (currentPara.length > 0) {
+  const flushPara = () => {
+    if (currentPara.length > 0) {
+      const content = currentPara.join("\n").trim();
+      if (content) {
         blocks.push({
           block_type: 2,
-          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+          text: { elements: [{ text_run: { content } }] },
         });
-        currentPara = [];
       }
+      currentPara = [];
+    }
+  };
+
+  for (const line of lines) {
+    // 代码块处理
+    if (line.startsWith("```")) {
+      if (!inCodeBlock) {
+        flushPara();
+        inCodeBlock = true;
+        codeLang = line.slice(3).trim();
+        codeContent = [];
+      } else {
+        // 代码块结束，添加到 blocks
+        const code = codeContent.join("\n");
+        blocks.push({
+          block_type: 2,
+          text: { elements: [{ text_run: { content: `\`\`\`${codeLang}\n${code}\n\`\`\`` } }] },
+        });
+        inCodeBlock = false;
+        codeContent = [];
+        codeLang = "";
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeContent.push(line);
+      continue;
+    }
+
+    // 标题处理
+    if (line.startsWith("### ")) {
+      flushPara();
       blocks.push({
         block_type: 3,
         heading3: { elements: [{ text_run: { content: line.slice(4) } }] },
       });
     } else if (line.startsWith("## ")) {
-      if (currentPara.length > 0) {
-        blocks.push({
-          block_type: 2,
-          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
-        });
-        currentPara = [];
-      }
+      flushPara();
       blocks.push({
         block_type: 3,
         heading2: { elements: [{ text_run: { content: line.slice(3) } }] },
       });
     } else if (line.startsWith("# ")) {
-      if (currentPara.length > 0) {
-        blocks.push({
-          block_type: 2,
-          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
-        });
-        currentPara = [];
-      }
+      flushPara();
       blocks.push({
         block_type: 3,
         heading1: { elements: [{ text_run: { content: line.slice(2) } }] },
@@ -334,13 +358,16 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
     }
   }
 
-  // 添加最后一个段落
-  if (currentPara.length > 0) {
+  // 处理未结束的代码块
+  if (inCodeBlock && codeContent.length > 0) {
     blocks.push({
       block_type: 2,
-      text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+      text: { elements: [{ text_run: { content: codeContent.join("\n") } }] },
     });
   }
+
+  // 添加最后一个段落
+  flushPara();
 
   return blocks;
 }
