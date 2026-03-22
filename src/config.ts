@@ -196,3 +196,38 @@ export function saveFolderToken(folderToken: string, profile?: string): void {
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
 }
+
+// ── OAuth Token 存储 ─────────────────────────────────────────
+
+export interface AuthToken {
+  access_token: string;      // user_access_token
+  refresh_token: string;
+  expires_at: number;        // 过期时间戳 (毫秒)
+  refresh_expires_at: number;
+  folder_token?: string;     // 用户授权的文件夹 token
+}
+
+const AUTH_DIR = path.join(os.homedir(), ".larkcc");
+
+function authPath(profile?: string): string {
+  return path.join(AUTH_DIR, `auth-${profile ?? "default"}.json`);
+}
+
+export function loadAuthToken(profile?: string): AuthToken | null {
+  const p = authPath(profile);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function saveAuthToken(token: AuthToken, profile?: string): void {
+  if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+  fs.writeFileSync(authPath(profile), JSON.stringify(token, null, 2), "utf8");
+}
+
+export function clearAuthToken(profile?: string): void {
+  try { fs.unlinkSync(authPath(profile)); } catch {}
+}

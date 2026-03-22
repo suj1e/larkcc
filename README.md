@@ -209,7 +209,6 @@ overflow:
     threshold: 2800           # 分片阈值
   document:
     threshold: 2800           # 写文档阈值
-    folder_token: "fldcnXXXX" # 云文档文件夹 token（必填，从飞书云空间 URL 复制）
     title_template: "{cwd} - {session_id} - {datetime}"
 
 commands:
@@ -231,12 +230,19 @@ profiles:
 | `chunk` | 分片发送，每片带页码 |
 | `document` | 写入飞书云文档，回复文档链接 |
 
-**文档模式配置：**
+**文档模式：**
 
-1. 在飞书"我的空间"创建一个文件夹（如 `larkcc`）
-2. 打开文件夹，从浏览器 URL 复制 token
-   - 例如：`https://feishu.cn/drive/folder/fldcnXXXX` → `fldcnXXXX`
-3. 将 token 填入 `overflow.document.folder_token`
+首次使用 document 模式时，会自动引导您进行 OAuth 授权：
+
+```
+🔐 首次使用云文档功能，需要进行一次授权。
+
+请查看终端输出的授权链接，在浏览器中打开并授权。
+
+授权完成后将自动继续...
+```
+
+授权成功后，token 会保存在本地，后续自动使用，无需再次授权。
 
 **标题模板占位符：**
 - `{cwd}` - 当前工作目录
