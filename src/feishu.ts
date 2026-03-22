@@ -296,8 +296,9 @@ async function getOrCreateFolder(token: string, profile: string): Promise<string
     return existing.token;
   }
 
-  // 2. 创建新文件夹
-  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/create_folder", {
+  // 2. 创建新文件夹（在我的空间根目录）
+  // 使用 drive/v1/files API，parent_token 为空表示根目录
+  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -305,7 +306,8 @@ async function getOrCreateFolder(token: string, profile: string): Promise<string
     },
     body: JSON.stringify({
       name: folderName,
-      folder_type: "my_space",
+      type: "folder",
+      parent_token: "",// 空字符串表示我的空间根目录
     }),
   });
   const createData = await safeJsonParse(createRes, "Create folder") as { data?: { token?: string } };
