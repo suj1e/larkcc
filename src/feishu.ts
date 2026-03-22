@@ -318,6 +318,84 @@ async function getOrCreateFolder(token: string, profile: string): Promise<string
 }
 
 /**
+ * 将 Markdown 文本转换为飞书文档块
+ * 简化版本：按段落分割，保留代码块
+ */
+function markdownToBlocks(markdown: string, messageLink: string): any[] {
+  const blocks: any[] = [];
+  const content = `📎 查看原消息：${messageLink}\n\n---\n\n${markdown}`;
+
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  let codeContent: string[] = [];
+  let codeLang = "";
+
+  for (const line of lines) {
+    // 代码块处理
+    if (line.startsWith("```")) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeLang = line.slice(3).trim();
+        codeContent = [];
+      } else {
+        inCodeBlock = false;
+        blocks.push({
+          block_type: 4, // code block
+          code: {
+            style: { language: codeLang || "plain" },
+            elements: [{ text_run: { content: codeContent.join("\n") } }],
+          },
+        });
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeContent.push(line);
+      continue;
+    }
+
+    // 标题处理
+    if (line.startsWith("### ")) {
+      blocks.push({
+        block_type: 3, // heading
+        heading: { level: 3, elements: [{ text_run: { content: line.slice(4) } }] },
+      });
+    } else if (line.startsWith("## ")) {
+      blocks.push({
+        block_type: 3,
+        heading: { level: 2, elements: [{ text_run: { content: line.slice(3) } }] },
+      });
+    } else if (line.startsWith("# ")) {
+      blocks.push({
+        block_type: 3,
+        heading: { level: 1, elements: [{ text_run: { content: line.slice(2) } }] },
+      });
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      // 无序列表
+      blocks.push({
+        block_type: 5, // bullet_list
+        bullet_list: { elements: [{ text_run: { content: line.slice(2) } }] },
+      });
+    } else if (line.trim() === "---") {
+      // 分隔线 - 跳过
+      continue;
+    } else if (line.trim() === "") {
+      // 空行 - 跳过
+      continue;
+    } else {
+      // 普通文本
+      blocks.push({
+        block_type: 2, // text
+        text: { elements: [{ text_run: { content: line } }] },
+      });
+    }
+  }
+
+  return blocks;
+}
+
+/**
  * 创建云文档并写入内容
  * 使用飞书 docx API，支持自动创建文件夹
  */
@@ -329,25 +407,8 @@ export async function createOverflowDocument(
   messageLink: string,
   profile?: string
 ): Promise<string> {
-  // 1. 使用 convert API 将 markdown 转换为文档块
-  const contentWithLink = `> 📎 [查看原消息](${messageLink})\n\n---\n\n${markdown}`;
-  const convertRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents/convert", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      content_type: "markdown",
-      content: contentWithLink,
-    }),
-  });
-  const convertData = await safeJsonParse(convertRes, "Convert markdown") as { data?: { blocks?: any[] } };
-  const blocks = convertData.data?.blocks ?? [];
-
-  if (blocks.length === 0) {
-    throw new Error("Failed to convert markdown to blocks");
-  }
+  // 1. 将 markdown 转换为文档块
+  const blocks = markdownToBlocks(markdown, messageLink);
 
   // 2. 获取或创建文件夹
   let targetFolder = folderToken;
@@ -379,51 +440,30 @@ export async function createOverflowDocument(
     throw new Error("Failed to create document");
   }
 
-  // 4. 写入内容到文档
-  const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docToken}/blocks/${docToken}/children/batch_create`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      children: blocks.map(block => ({
-        block_type: block.block_type,
-        [getBlockTypeKey(block.block_type)]: block[getBlockTypeKey(block.block_type)],
-      })),
-      index: 0,
-    }),
-  });
+  // 4. 写入内容到文档（分批写入，每批最多 50 个块）
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < blocks.length; i += BATCH_SIZE) {
+    const batch = blocks.slice(i, i + BATCH_SIZE);
+    const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docToken}/blocks/${docToken}/children/batch_create`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        children: batch,
+        index: -1, // 追加到末尾
+      }),
+    });
 
-  const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string };
-  if (updateData.code !== 0) {
-    throw new Error(`Failed to write content: ${updateData.msg}`);
+    const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string };
+    if (updateData.code !== 0) {
+      throw new Error(`Failed to write content: ${updateData.msg}`);
+    }
   }
 
   // 返回文档链接
   return `https://feishu.cn/docx/${docToken}`;
-}
-
-/**
- * 获取 block_type 对应的 key
- */
-function getBlockTypeKey(blockType: number): string {
-  const typeMap: Record<number, string> = {
-    1: "page",
-    2: "text",
-    3: "heading",
-    4: "code",
-    5: "bullet_list",
-    6: "ordered_list",
-    7: "todo_list",
-    8: "toggle",
-    9: "divider",
-    10: "image",
-    11: "table",
-    12: "quote",
-    13: "callout",
-  };
-  return typeMap[blockType] ?? "text";
 }
 
 /**
