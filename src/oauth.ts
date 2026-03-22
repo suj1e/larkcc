@@ -3,81 +3,56 @@
  * 用于获取 user_access_token 以访问用户的个人云空间
  */
 
-import http from "http";
+import * as readline from "readline";
 import { AuthToken, loadAuthToken, saveAuthToken } from "./config.js";
-
-const OAUTH_PORT = 9527;
-const REDIRECT_URI = `http://localhost:${OAUTH_PORT}/callback`;
 
 // 飞书 OAuth 配置
 const AUTH_URL = "https://open.feishu.cn/open-apis/authen/v1/authorize";
 const TOKEN_URL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
-const REFRESH_URL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
 
 // 所需权限：云文档读写
 const REQUIRED_SCOPES = ["drive:file", "drive:file:upload", "docs:doc", "offline_access"];
 
 /**
- * 生成授权链接
+ * 生成授权链接（使用 OOB 方式，无需配置回调地址）
  */
-export function generateAuthUrl(appId: string, state: string): string {
+export function generateAuthUrl(appId: string): string {
   const params = new URLSearchParams({
     app_id: appId,
-    redirect_uri: REDIRECT_URI,
-    state,
+    redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
     scope: REQUIRED_SCOPES.join(" "),
   });
   return `${AUTH_URL}?${params.toString()}`;
 }
 
 /**
- * 启动本地服务器等待授权回调
+ * 等待用户输入授权码
  */
-export function waitForCallback(): Promise<string> {
+function waitForCodeInput(): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
   return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      const url = new URL(req.url || "/", "http://localhost");
-
-      if (url.pathname === "/callback") {
-        const code = url.searchParams.get("code");
-        const error = url.searchParams.get("error");
-
-        if (error) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h1>授权失败</h1><p>${error}</p><p>请关闭此页面并重试。</p>`);
-          server.close();
-          reject(new Error(error));
-        } else if (code) {
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h1>授权成功！</h1><p>请关闭此页面，回到终端继续。</p>`);
-          server.close();
-          resolve(code);
-        } else {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h1>无效请求</h1>`);
-        }
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
-
-    server.listen(OAUTH_PORT, () => {
-      console.log(`OAuth 回调服务器已启动: http://localhost:${OAUTH_PORT}`);
-    });
-
     // 5 分钟超时
-    setTimeout(() => {
-      server.close();
+    const timeout = setTimeout(() => {
+      rl.close();
       reject(new Error("授权超时，请重试"));
     }, 5 * 60 * 1000);
+
+    rl.question("\n请输入浏览器中显示的授权码: ", (code) => {
+      clearTimeout(timeout);
+      rl.close();
+      resolve(code.trim());
+    });
   });
 }
 
 /**
  * 用授权码换取 access_token
  */
-export async function exchangeCodeForToken(
+async function exchangeCodeForToken(
   appId: string,
   appSecret: string,
   code: string
@@ -90,7 +65,6 @@ export async function exchangeCodeForToken(
       client_id: appId,
       client_secret: appSecret,
       code,
-      redirect_uri: REDIRECT_URI,
     }),
   });
 
@@ -112,12 +86,12 @@ export async function exchangeCodeForToken(
 /**
  * 刷新 access_token
  */
-export async function refreshAccessToken(
+async function refreshAccessToken(
   appId: string,
   appSecret: string,
   refreshToken: string
 ): Promise<AuthToken> {
-  const res = await fetch(REFRESH_URL, {
+  const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -189,11 +163,11 @@ export async function doOAuthFlow(
 ): Promise<string> {
   console.log("\n🔐 需要授权访问您的云文档");
   console.log("请在浏览器中打开以下链接进行授权：\n");
-  console.log(generateAuthUrl(appId, "larkcc"));
-  console.log("\n等待授权...");
+  console.log(generateAuthUrl(appId));
+  console.log("\n授权后，请将浏览器中显示的授权码粘贴到此处。");
 
-  // 等待回调
-  const code = await waitForCallback();
+  // 等待用户输入授权码
+  const code = await waitForCodeInput();
   console.log("✅ 已获取授权码，正在换取 token...");
 
   // 换取 token
