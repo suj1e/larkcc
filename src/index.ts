@@ -3,7 +3,7 @@ import { program } from "commander";
 import chalk from "chalk";
 import { loadConfig, globalConfigExists, GLOBAL_CONFIG_PATH, listProfiles } from "./config.js";
 import { runSetup, runNewProfile } from "./setup.js";
-import { startApp } from "./app.js";
+import { startApp, listRunningProcesses } from "./app.js";
 import { logger } from "./logger.js";
 import { clearSession, initSession } from "./session.js";
 
@@ -30,6 +30,7 @@ program
   .option("--new-profile",          "add a new Feishu bot profile")
   .option("--list-profiles",        "list all configured profiles")
   .option("--reset-session",        "clear saved Claude session")
+  .option("--ps",                   "list running larkcc processes")
   .parse(process.argv);
 
 const opts = program.opts();
@@ -56,6 +57,42 @@ if (opts.listProfiles) {
     for (const p of profiles) {
       const tag = p.name === "default" ? chalk.gray("(default)") : "";
       console.log(`  ${chalk.cyan(p.name.padEnd(16))} ${chalk.gray(p.app_id)} ${tag}`);
+    }
+    console.log();
+  }
+  process.exit(0);
+}
+
+// list running processes
+if (opts.ps) {
+  const { processes, cleaned } = listRunningProcesses();
+
+  if (cleaned.length > 0) {
+    for (const profile of cleaned) {
+      console.log(chalk.yellow(`Cleaned stale lock: ${profile} (process already dead)`));
+    }
+    console.log();
+  }
+
+  if (processes.length === 0) {
+    console.log(chalk.gray("No running larkcc processes."));
+  } else {
+    console.log("\nRunning larkcc processes:\n");
+    console.log("  Profile          PID      Directory                         Started              Mode");
+    console.log("  " + "─".repeat(90));
+
+    for (const p of processes) {
+      const profile = p.profile.padEnd(16);
+      const pid = String(p.pid).padEnd(8);
+      const cwd = p.cwd.length > 32 ? "…" + p.cwd.slice(-31) : p.cwd.padEnd(32);
+      const started = new Date(p.startedAt).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).replace(/\//g, "-").padEnd(12);
+      const mode = p.isContinue ? chalk.cyan("continue") : "new      ";
+      console.log(`  ${chalk.cyan(profile)}  ${pid}  ${chalk.gray(cwd)}  ${started}  ${mode}`);
     }
     console.log();
   }

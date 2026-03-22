@@ -14,7 +14,7 @@ import { logger } from "./logger.js";
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const LOCK_DIR = path.join(os.homedir(), ".larkcc");
 
-interface LockData { pid: number; cwd: string; startedAt: string; }
+interface LockData { pid: number; cwd: string; startedAt: string; continue: boolean; }
 
 function lockPath(profile?: string): string {
   return path.join(LOCK_DIR, profile ? `lock-${profile}.json` : "lock-default.json");
@@ -28,9 +28,9 @@ function readLock(profile?: string): LockData | null {
   } catch { return null; }
 }
 
-function writeLock(cwd: string, profile?: string): void {
+function writeLock(cwd: string, profile: string | undefined, isContinue: boolean): void {
   if (!fs.existsSync(LOCK_DIR)) fs.mkdirSync(LOCK_DIR, { recursive: true });
-  fs.writeFileSync(lockPath(profile), JSON.stringify({ pid: process.pid, cwd, startedAt: new Date().toISOString() }, null, 2), "utf8");
+  fs.writeFileSync(lockPath(profile), JSON.stringify({ pid: process.pid, cwd, startedAt: new Date().toISOString(), continue: isContinue }, null, 2), "utf8");
 }
 
 function clearLock(profile?: string): void {
@@ -61,6 +61,55 @@ async function checkLock(cwd: string, profile?: string): Promise<void> {
 
   if (answer !== "y") { logger.info("Aborted."); process.exit(0); }
   clearLock(profile);
+}
+
+export interface RunningProcess {
+  profile: string;
+  pid: number;
+  cwd: string;
+  startedAt: string;
+  isContinue: boolean;
+  alive: boolean;
+}
+
+export function listRunningProcesses(): { processes: RunningProcess[]; cleaned: string[] } {
+  const processes: RunningProcess[] = [];
+  const cleaned: string[] = [];
+
+  if (!fs.existsSync(LOCK_DIR)) return { processes, cleaned };
+
+  const files = fs.readdirSync(LOCK_DIR).filter(f => f.startsWith("lock-") && f.endsWith(".json"));
+
+  for (const file of files) {
+    const match = file.match(/^lock-(.+)\.json$/);
+    if (!match) continue;
+
+    const profile = match[1];
+    const lock = readLock(profile);
+    if (!lock) continue;
+
+    const alive = isProcessAlive(lock.pid);
+
+    if (!alive) {
+      clearLock(profile);
+      cleaned.push(profile);
+      continue;
+    }
+
+    processes.push({
+      profile,
+      pid: lock.pid,
+      cwd: lock.cwd,
+      startedAt: lock.startedAt,
+      isContinue: lock.continue ?? false,
+      alive,
+    });
+  }
+
+  // 按启动时间排序
+  processes.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  return { processes, cleaned };
 }
 
 function injectClaudeEnv(): void {
@@ -134,7 +183,7 @@ export async function startApp(
   const customCommands: Record<string, string> = (config as any).commands ?? {};
 
   await checkLock(cwd, profile);
-  writeLock(cwd, profile);
+  writeLock(cwd, profile, continueSession);
 
   injectClaudeEnv();
   ensureClaudeOnboarding();
