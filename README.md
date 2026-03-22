@@ -45,6 +45,9 @@ larkcc --list-profiles          # 查看所有已配置的机器人
 # Session 管理
 larkcc --reset-session          # 清除默认机器人的 session
 larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
+
+# 进程管理
+larkcc --ps                     # 查看运行中的 larkcc 进程
 ```
 
 ## 群聊支持
