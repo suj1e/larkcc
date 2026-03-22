@@ -825,7 +825,7 @@ export async function createOverflowDocument(
       },
       body: JSON.stringify({
         children: batch,
-        index: 0,
+        index: i,  // 使用累积索引，确保批次按正确顺序插入
       }),
     });
 
