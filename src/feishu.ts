@@ -275,21 +275,71 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
 
 /**
  * 将 Markdown 文本转换为飞书文档块
- * 简化版本：全部使用文本块，避免复杂的块类型格式问题
+ * 支持标题和文本，保留 markdown 格式
  */
 function markdownToBlocks(markdown: string, messageLink: string): any[] {
   const blocks: any[] = [];
-  const content = `📎 查看原消息：${messageLink}\n\n---\n\n${markdown}`;
+  const header = `📎 查看原消息：${messageLink}\n\n---`;
 
-  // 按段落分割，每段作为一个文本块
-  const paragraphs = content.split("\n\n");
-  for (const para of paragraphs) {
-    if (para.trim()) {
+  // 添加头部
+  blocks.push({
+    block_type: 2,
+    text: { elements: [{ text_run: { content: header } }] },
+  });
+
+  // 处理 markdown 内容
+  const lines = markdown.split("\n");
+  let currentPara: string[] = [];
+
+  for (const line of lines) {
+    // 标题处理
+    if (line.startsWith("### ")) {
+      if (currentPara.length > 0) {
+        blocks.push({
+          block_type: 2,
+          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+        });
+        currentPara = [];
+      }
       blocks.push({
-        block_type: 2, // text
-        text: { elements: [{ text_run: { content: para.trim() } }] },
+        block_type: 3,
+        heading3: { elements: [{ text_run: { content: line.slice(4) } }] },
       });
+    } else if (line.startsWith("## ")) {
+      if (currentPara.length > 0) {
+        blocks.push({
+          block_type: 2,
+          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+        });
+        currentPara = [];
+      }
+      blocks.push({
+        block_type: 3,
+        heading2: { elements: [{ text_run: { content: line.slice(3) } }] },
+      });
+    } else if (line.startsWith("# ")) {
+      if (currentPara.length > 0) {
+        blocks.push({
+          block_type: 2,
+          text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+        });
+        currentPara = [];
+      }
+      blocks.push({
+        block_type: 3,
+        heading1: { elements: [{ text_run: { content: line.slice(2) } }] },
+      });
+    } else {
+      currentPara.push(line);
     }
+  }
+
+  // 添加最后一个段落
+  if (currentPara.length > 0) {
+    blocks.push({
+      block_type: 2,
+      text: { elements: [{ text_run: { content: currentPara.join("\n") } }] },
+    });
   }
 
   return blocks;
