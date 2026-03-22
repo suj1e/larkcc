@@ -467,17 +467,6 @@ function parseInlineText(text: string): any[] {
 function markdownToBlocks(markdown: string, messageLink: string): any[] {
   const blocks: any[] = [];
 
-  // 添加头部链接
-  blocks.push({
-    block_type: BlockType.TEXT,
-    text: {
-      elements: [{ text_run: { content: `📎 查看原消息：${messageLink}` } }],
-    },
-  });
-
-  // 添加分割线
-  blocks.push({ block_type: BlockType.DIVIDER, divider: {} });
-
   // 处理 markdown 内容
   const lines = markdown.split("\n");
   let currentPara: string[] = [];
@@ -629,6 +618,25 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
 
   // 添加最后一个段落
   flushPara();
+
+  // 在标题后面插入引用块（说明这是 AI 回复的完整内容）
+  const quoteBlock = {
+    block_type: BlockType.QUOTE,
+    quote: {
+      elements: [{ text_run: { content: `💬 此文档为 AI 回复的完整内容，因消息过长已转为云文档。` } }],
+    },
+  };
+
+  // 如果第一个块是标题，在标题后面插入引用块
+  // 否则在最开头插入
+  const firstBlock = blocks[0];
+  if (firstBlock && (firstBlock.block_type === BlockType.HEADING1 ||
+      firstBlock.block_type === BlockType.HEADING2 ||
+      firstBlock.block_type === BlockType.HEADING3)) {
+    blocks.splice(1, 0, quoteBlock);
+  } else {
+    blocks.unshift(quoteBlock);
+  }
 
   return blocks;
 }
