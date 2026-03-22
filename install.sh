@@ -70,7 +70,11 @@ success "Claude CLI: $(which claude)"
 
 # ── 安装依赖 ──────────────────────────────────────────────────
 info "Installing dependencies..."
-pnpm install --frozen-lockfile
+if [ -f "pnpm-lock.yaml" ]; then
+  pnpm install --frozen-lockfile
+else
+  pnpm i
+fi
 success "Dependencies installed"
 
 # ── 构建 ─────────────────────────────────────────────────────
