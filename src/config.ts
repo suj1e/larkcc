@@ -130,6 +130,11 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
     };
   }
 
+  // 添加默认 overflow 配置（首次创建时）
+  if (!raw.overflow) {
+    raw.overflow = DEFAULT_OVERFLOW;
+  }
+
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
 }
 
