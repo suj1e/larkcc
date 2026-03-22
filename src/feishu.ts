@@ -139,9 +139,6 @@ async function replyWithDocument(
     // 获取 tenant_access_token
     const token = await getTenantAccessToken(context.appId, context.appSecret);
 
-    // 获取或创建 larkcc 文件夹
-    const folderToken = await getOrCreateLarkccFolder(token, context.profile);
-
     // 构建文档标题
     const now = new Date();
     const datetime = now.toISOString().replace("T", " ").slice(0, 19);
@@ -155,8 +152,8 @@ async function replyWithDocument(
     // 构建消息链接
     const messageLink = buildMessageLink(chatId, rootMsgId);
 
-    // 创建文档
-    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink);
+    // 创建文档（在应用云空间）
+    const docUrl = await createOverflowDocument(token, title, markdown, messageLink);
 
     // 回复文档链接
     await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
@@ -355,62 +352,10 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
 }
 
 /**
- * 获取或创建 larkcc 文件夹
- * 使用 tenant_access_token（开通用户身份权限后可访问用户空间）
- */
-async function getOrCreateLarkccFolder(token: string, profile: string): Promise<string> {
-  const folderName = `larkcc${profile && profile !== "default" ? `-${profile}` : ""}`;
-
-  // 1. 获取"我的空间"根目录 token
-  const rootRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/root_folder/meta", {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${token}` },
-  });
-  const rootData = await safeJsonParse(rootRes, "Get root folder") as { data?: { token?: string } };
-  const rootToken = rootData.data?.token;
-
-  if (!rootToken) {
-    throw new Error("Failed to get root folder token. Make sure you have enabled 'drive:drive' permission with user identity.");
-  }
-
-  // 2. 查找现有 larkcc 文件夹
-  const listRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files?folder_token=${rootToken}&page_size=50`, {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${token}` },
-  });
-  const listData = await safeJsonParse(listRes, "List folders") as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
-  const existing = listData.data?.files?.find(f => f.name === folderName && f.type === "folder");
-  if (existing?.token) {
-    return existing.token;
-  }
-
-  // 3. 创建新文件夹
-  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/create_folder", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: folderName,
-      parent_token: rootToken,
-    }),
-  });
-  const createData = await safeJsonParse(createRes, "Create folder") as { data?: { token?: string } };
-  if (createData.data?.token) {
-    return createData.data.token;
-  }
-
-  throw new Error("Failed to create larkcc folder");
-}
-
-/**
- * 创建云文档并写入内容
- * 使用飞书 docx API
+ * 创建云文档并写入内容（在应用云空间）
  */
 export async function createOverflowDocument(
   token: string,
-  folderToken: string,
   title: string,
   markdown: string,
   messageLink: string
@@ -418,27 +363,27 @@ export async function createOverflowDocument(
   // 1. 将 markdown 转换为文档块
   const blocks = markdownToBlocks(markdown, messageLink);
 
-  // 2. 创建文档
+  // 2. 创建文档（不指定 folder_token，创建在应用云空间）
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ title, folder_token: folderToken }),
+    body: JSON.stringify({ title }),
   });
   const createData = await safeJsonParse(createRes, "Create document") as { data?: { document?: { document_id?: string } } };
-  const docToken = createData.data?.document?.document_id;
+  const docId = createData.data?.document?.document_id;
 
-  if (!docToken) {
+  if (!docId) {
     throw new Error("Failed to create document");
   }
 
-  // 4. 写入内容到文档（分批写入，每批最多 50 个块）
+  // 3. 写入内容到文档（分批写入，每批最多 50 个块）
   const BATCH_SIZE = 50;
   for (let i = 0; i < blocks.length; i += BATCH_SIZE) {
     const batch = blocks.slice(i, i + BATCH_SIZE);
-    const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docToken}/blocks/${docToken}/children/batch_create`, {
+    const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/children`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -446,7 +391,7 @@ export async function createOverflowDocument(
       },
       body: JSON.stringify({
         children: batch,
-        index: -1, // 追加到末尾
+        index: 0,
       }),
     });
 
@@ -457,7 +402,7 @@ export async function createOverflowDocument(
   }
 
   // 返回文档链接
-  return `https://feishu.cn/docx/${docToken}`;
+  return `https://feishu.cn/docx/${docId}`;
 }
 
 /**
