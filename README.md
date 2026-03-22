@@ -236,8 +236,8 @@ profiles:
 
 | 权限 | 说明 |
 |------|------|
-| `docs:doc` | 查看、评论和编辑云文档 |
-| `drive:drive` | 访问云空间 |
+| `docx:document` | 创建/编辑云文档 |
+| `drive:file` | 删除云空间文件 |
 
 开通后发布应用，文档会自动创建在您"我的空间"的`larkcc` 文件夹中。
 
@@ -318,8 +318,8 @@ overflow:
 | `im:message.group_at_msg:readonly` | 接收群 @ 消息 |
 | `im:message.reactions:write_only` | 打 reaction |
 | `cardkit:card:write` | 发送卡片 |
-| `docs:doc` | 创建/编辑云文档（超长消息写入） |
-| `drive:drive` | 访问云空间（超长消息写入） |
+| `docx:document` | 创建/编辑云文档（超长消息写入） |
+| `drive:file` | 删除云空间文件（清理旧文档） |
 
 ### 事件订阅
 
