@@ -172,8 +172,16 @@ async function replyWithDocument(
       cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs);
     }
 
+    // 构建文档元信息
+    const meta: DocumentMeta = {
+      cwd: context.cwd,
+      profile: context.profile,
+      sessionId: context.sessionId ?? "",
+      datetime: datetime,
+    };
+
     // 创建文档（在应用云空间）
-    const docUrl = await createOverflowDocument(token, title, markdown, originalMessage);
+    const docUrl = await createOverflowDocument(token, title, markdown, originalMessage, meta);
 
     // 构建回复消息
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
@@ -491,10 +499,20 @@ function parseInlineText(text: string): any[] {
 }
 
 /**
+ * 文档元信息
+ */
+interface DocumentMeta {
+  cwd: string;
+  profile: string;
+  sessionId: string;
+  datetime: string;
+}
+
+/**
  * 将 Markdown 文本转换为飞书文档块
  * 支持标题、代码块、列表、引用和文本
  */
-function markdownToBlocks(markdown: string, originalMessage: string): any[] {
+function markdownToBlocks(markdown: string, originalMessage: string, meta: DocumentMeta): any[] {
   const blocks: any[] = [];
 
   // 处理 markdown 内容
@@ -649,7 +667,9 @@ function markdownToBlocks(markdown: string, originalMessage: string): any[] {
   // 添加最后一个段落
   flushPara();
 
-  // 在标题后面插入引用块（显示用户的原始消息）
+  // 构建文档头部结构：引用块 → 分割线 → 元信息 → 分割线 → 正文
+
+  // 1. 引用块（显示用户的原始消息）
   const quoteBlock = {
     block_type: BlockType.QUOTE,
     quote: {
@@ -657,15 +677,40 @@ function markdownToBlocks(markdown: string, originalMessage: string): any[] {
     },
   };
 
-  // 如果第一个块是标题，在标题后面插入引用块
+  // 2. 分割线
+  const divider1 = { block_type: BlockType.DIVIDER, divider: {} };
+
+  // 3. 元信息块
+  const metaLines = [
+    `📁 工作目录: ${meta.cwd}`,
+    `🤖 机器人: ${meta.profile}`,
+    `🔗 会话ID: ${meta.sessionId}`,
+    `📅 时间: ${meta.datetime}`,
+  ];
+  const metaBlock = {
+    block_type: BlockType.TEXT,
+    text: {
+      elements: metaLines.map(line => ({
+        text_run: { content: line },
+      })),
+    },
+  };
+
+  // 4. 分割线
+  const divider2 = { block_type: BlockType.DIVIDER, divider: {} };
+
+  // 在正文前插入头部结构
+  const header = [quoteBlock, divider1, metaBlock, divider2];
+
+  // 如果第一个块是标题，在标题后面插入头部
   // 否则在最开头插入
   const firstBlock = blocks[0];
   if (firstBlock && (firstBlock.block_type === BlockType.HEADING1 ||
       firstBlock.block_type === BlockType.HEADING2 ||
       firstBlock.block_type === BlockType.HEADING3)) {
-    blocks.splice(1, 0, quoteBlock);
+    blocks.splice(1, 0, ...header);
   } else {
-    blocks.unshift(quoteBlock);
+    blocks.unshift(...header);
   }
 
   return blocks;
@@ -678,10 +723,11 @@ export async function createOverflowDocument(
   token: string,
   title: string,
   markdown: string,
-  originalMessage: string
+  originalMessage: string,
+  meta: DocumentMeta
 ): Promise<string> {
   // 1. 将 markdown 转换为文档块
-  const blocks = markdownToBlocks(markdown, originalMessage);
+  const blocks = markdownToBlocks(markdown, originalMessage, meta);
 
   // 2. 创建文档（不指定 folder_token，创建在应用云空间）
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {

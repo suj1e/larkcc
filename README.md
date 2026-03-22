@@ -248,8 +248,23 @@ profiles:
 - `{date}` - 日期（2026-03-22）
 - `{profile}` - 机器人配置名
 
-**文档格式：**
-- 文档开头附带原消息引用，方便追溯
+**文档结构：**
+
+```
+> 用户原始消息内容
+
+──────────────────
+
+📁 工作目录: /opt/dev/myproject
+🤖 机器人: default
+🔗 会话ID: abc123def456
+📅 时间: 2026-03-22 14:30:00
+
+──────────────────
+
+（实际回复内容...）
+```
+
 - 支持 Markdown 格式（标题、代码块、列表等）
 
 **自动清理：**
@@ -261,7 +276,7 @@ overflow:
   mode: document
   document:
     threshold: 2800
-    title_template: "{cwd} - {session_id} - {datetime}"
+    title_template: "{datetime}"
     cleanup:
       enabled: true       # 是否启用自动清理
       max_docs: 50        # 最大保留文档数

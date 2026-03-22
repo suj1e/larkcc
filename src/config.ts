@@ -52,7 +52,7 @@ const DEFAULT_OVERFLOW: OverflowConfig = {
   chunk: { threshold: 2800 },
   document: {
     threshold: 2800,
-    title_template: "{cwd} - {session_id} - {datetime}",
+    title_template: "{datetime}",
     cleanup: {
       enabled: true,
       max_docs: 50,
