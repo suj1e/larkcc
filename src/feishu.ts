@@ -1,6 +1,5 @@
 import * as lark from "@larksuiteoapi/node-sdk";
-import { OverflowConfig, loadAuthToken, saveAuthToken } from "./config.js";
-import { getValidUserToken, doOAuthFlow } from "./oauth.js";
+import { OverflowConfig } from "./config.js";
 
 export function createLarkClient(appId: string, appSecret: string) {
   return new lark.Client({ appId, appSecret });
@@ -137,24 +136,11 @@ async function replyWithDocument(
   context: ReplyContext
 ): Promise<void> {
   try {
-    // 获取有效的 user_access_token
-    let userToken = await getValidUserToken(context.appId, context.appSecret, context.profile);
+    // 获取 tenant_access_token
+    const token = await getTenantAccessToken(context.appId, context.appSecret);
 
-    // 如果没有有效的 token，引导用户授权
-    if (!userToken) {
-      await sendMessageChunk(client, rootMsgId, `🔐 首次使用云文档功能，需要进行一次授权。
-
-请查看终端输出的授权链接，在浏览器中打开并授权。
-
-授权完成后将自动继续...`);
-
-      // 执行 OAuth 流程
-      userToken = await doOAuthFlow(context.appId, context.appSecret, context.profile);
-
-      if (!userToken) {
-        throw new Error("授权失败");
-      }
-    }
+    // 获取或创建 larkcc 文件夹
+    const folderToken = await getOrCreateLarkccFolder(token, context.profile);
 
     // 构建文档标题
     const now = new Date();
@@ -169,8 +155,8 @@ async function replyWithDocument(
     // 构建消息链接
     const messageLink = buildMessageLink(chatId, rootMsgId);
 
-    // 创建文档（直接在我的空间创建）
-    const docUrl = await createOverflowDocument(userToken, title, markdown, messageLink);
+    // 创建文档
+    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink);
 
     // 回复文档链接
     await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
@@ -369,11 +355,62 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
 }
 
 /**
+ * 获取或创建 larkcc 文件夹
+ * 使用 tenant_access_token（开通用户身份权限后可访问用户空间）
+ */
+async function getOrCreateLarkccFolder(token: string, profile: string): Promise<string> {
+  const folderName = `larkcc${profile && profile !== "default" ? `-${profile}` : ""}`;
+
+  // 1. 获取"我的空间"根目录 token
+  const rootRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/root_folder/meta", {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  const rootData = await safeJsonParse(rootRes, "Get root folder") as { data?: { token?: string } };
+  const rootToken = rootData.data?.token;
+
+  if (!rootToken) {
+    throw new Error("Failed to get root folder token. Make sure you have enabled 'drive:drive' permission with user identity.");
+  }
+
+  // 2. 查找现有 larkcc 文件夹
+  const listRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files?folder_token=${rootToken}&page_size=50`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  const listData = await safeJsonParse(listRes, "List folders") as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
+  const existing = listData.data?.files?.find(f => f.name === folderName && f.type === "folder");
+  if (existing?.token) {
+    return existing.token;
+  }
+
+  // 3. 创建新文件夹
+  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/create_folder", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: folderName,
+      parent_token: rootToken,
+    }),
+  });
+  const createData = await safeJsonParse(createRes, "Create folder") as { data?: { token?: string } };
+  if (createData.data?.token) {
+    return createData.data.token;
+  }
+
+  throw new Error("Failed to create larkcc folder");
+}
+
+/**
  * 创建云文档并写入内容
- * 使用飞书 docx API（user_access_token 直接在用户空间创建）
+ * 使用飞书 docx API
  */
 export async function createOverflowDocument(
   token: string,
+  folderToken: string,
   title: string,
   markdown: string,
   messageLink: string
@@ -381,14 +418,14 @@ export async function createOverflowDocument(
   // 1. 将 markdown 转换为文档块
   const blocks = markdownToBlocks(markdown, messageLink);
 
-  // 2. 创建文档（使用 user_access_token，文档会创建在用户的个人空间）
+  // 2. 创建文档
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, folder_token: folderToken }),
   });
   const createData = await safeJsonParse(createRes, "Create document") as { data?: { document?: { document_id?: string } } };
   const docToken = createData.data?.document?.document_id;

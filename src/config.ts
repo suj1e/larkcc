@@ -14,7 +14,6 @@ export interface OverflowConfig {
   chunk: { threshold: number };
   document: {
     threshold: number;
-    folder_token: string;
     title_template: string;
   };
 }
@@ -46,7 +45,6 @@ const DEFAULT_OVERFLOW: OverflowConfig = {
   chunk: { threshold: 2800 },
   document: {
     threshold: 2800,
-    folder_token: "",
     title_template: "{cwd} - {session_id} - {datetime}",
   },
 };
@@ -99,7 +97,6 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       chunk: { threshold: overflow.chunk?.threshold ?? DEFAULT_OVERFLOW.chunk.threshold },
       document: {
         threshold: overflow.document?.threshold ?? DEFAULT_OVERFLOW.document.threshold,
-        folder_token: overflow.document?.folder_token ?? DEFAULT_OVERFLOW.document.folder_token,
         title_template: overflow.document?.title_template ?? DEFAULT_OVERFLOW.document.title_template,
       },
     },
@@ -173,61 +170,4 @@ export function saveOwnerOpenId(openId: string, profile?: string): void {
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
-}
-
-// 保存云文档文件夹 token
-export function saveFolderToken(folderToken: string, profile?: string): void {
-  const dir = path.dirname(GLOBAL_CONFIG_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  let raw: any = loadYml(GLOBAL_CONFIG_PATH) ?? {};
-
-  if (!profile || profile === "default") {
-    if (!raw.overflow) raw.overflow = {};
-    if (!raw.overflow.document) raw.overflow.document = {};
-    raw.overflow.document.folder_token = folderToken;
-  } else {
-    if (!raw.profiles) raw.profiles = {};
-    if (!raw.profiles[profile]) raw.profiles[profile] = {};
-    if (!raw.profiles[profile].overflow) raw.profiles[profile].overflow = {};
-    if (!raw.profiles[profile].overflow.document) raw.profiles[profile].overflow.document = {};
-    raw.profiles[profile].overflow.document.folder_token = folderToken;
-  }
-
-  fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
-}
-
-// ── OAuth Token 存储 ─────────────────────────────────────────
-
-export interface AuthToken {
-  access_token: string;      // user_access_token
-  refresh_token: string;
-  expires_at: number;        // 过期时间戳 (毫秒)
-  refresh_expires_at: number;
-  folder_token?: string;     // 用户授权的文件夹 token
-}
-
-const AUTH_DIR = path.join(os.homedir(), ".larkcc");
-
-function authPath(profile?: string): string {
-  return path.join(AUTH_DIR, `auth-${profile ?? "default"}.json`);
-}
-
-export function loadAuthToken(profile?: string): AuthToken | null {
-  const p = authPath(profile);
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-export function saveAuthToken(token: AuthToken, profile?: string): void {
-  if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
-  fs.writeFileSync(authPath(profile), JSON.stringify(token, null, 2), "utf8");
-}
-
-export function clearAuthToken(profile?: string): void {
-  try { fs.unlinkSync(authPath(profile)); } catch {}
 }
