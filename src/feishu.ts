@@ -262,6 +262,21 @@ interface ReplyContext {
 }
 
 /**
+ * 安全解析 JSON 响应
+ */
+async function safeJsonParse(res: Response, context: string): Promise<any> {
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`${context} failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${context} returned non-JSON: ${text.slice(0, 200)}`);
+  }
+}
+
+/**
  * 获取或创建 larkcc 文件夹
  * 如果 folder_token 未配置，自动在"我的空间"创建 larkcc 文件夹
  */
@@ -275,7 +290,7 @@ async function getOrCreateFolder(token: string, profile: string): Promise<string
       "Authorization": `Bearer ${token}`,
     },
   });
-  const searchData = await searchRes.json() as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
+  const searchData = await safeJsonParse(searchRes, "Search folder") as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
   const existing = searchData.data?.files?.find(f => f.name === folderName && f.type === "folder");
   if (existing?.token) {
     return existing.token;
@@ -293,7 +308,7 @@ async function getOrCreateFolder(token: string, profile: string): Promise<string
       folder_type: "my_space",
     }),
   });
-  const createData = await createRes.json() as { data?: { token?: string } };
+  const createData = await safeJsonParse(createRes, "Create folder") as { data?: { token?: string } };
   if (createData.data?.token) {
     return createData.data.token;
   }
@@ -327,7 +342,7 @@ export async function createOverflowDocument(
       content: contentWithLink,
     }),
   });
-  const convertData = await convertRes.json() as { data?: { blocks?: any[] } };
+  const convertData = await safeJsonParse(convertRes, "Convert markdown") as { data?: { blocks?: any[] } };
   const blocks = convertData.data?.blocks ?? [];
 
   if (blocks.length === 0) {
@@ -357,7 +372,7 @@ export async function createOverflowDocument(
     },
     body: JSON.stringify(createBody),
   });
-  const createData = await createRes.json() as { data?: { document?: { document_id?: string } } };
+  const createData = await safeJsonParse(createRes, "Create document") as { data?: { document?: { document_id?: string } } };
   const docToken = createData.data?.document?.document_id;
 
   if (!docToken) {
@@ -380,7 +395,7 @@ export async function createOverflowDocument(
     }),
   });
 
-  const updateData = await updateRes.json();
+  const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string };
   if (updateData.code !== 0) {
     throw new Error(`Failed to write content: ${updateData.msg}`);
   }
@@ -431,9 +446,9 @@ async function getTenantAccessToken(appId: string, appSecret: string): Promise<s
       app_secret: appSecret,
     }),
   });
-  const data = await res.json() as { tenant_access_token?: string; expire?: number };
+  const data = await safeJsonParse(res, "Get access token") as { tenant_access_token?: string; expire?: number; code?: number; msg?: string };
   if (!data.tenant_access_token) {
-    throw new Error("Failed to get tenant access token");
+    throw new Error(`Failed to get tenant access token: ${data.msg ?? JSON.stringify(data)}`);
   }
   // 缓存 token（提前 5 分钟过期）
   cachedToken = {
