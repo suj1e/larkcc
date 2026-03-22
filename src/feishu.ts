@@ -149,11 +149,24 @@ async function replyWithDocument(
       .replace("{datetime}", datetime)
       .replace("{date}", datetime.slice(0, 10));
 
-    // 构建消息链接
-    const messageLink = buildMessageLink(chatId, rootMsgId);
+    // 获取用户原始消息内容
+    let originalMessage = "";
+    try {
+      const msgRes = await client.im.message.get({
+        path: { message_id: rootMsgId },
+      });
+      const msgData = msgRes.data as any;
+      // 提取消息文本内容
+      if (msgData?.items?.[0]?.body?.content) {
+        const content = JSON.parse(msgData.items[0].body.content);
+        originalMessage = content.text || "";
+      }
+    } catch {
+      // 获取失败时忽略
+    }
 
     // 创建文档（在应用云空间）
-    const docUrl = await createOverflowDocument(token, title, markdown, messageLink);
+    const docUrl = await createOverflowDocument(token, title, markdown, originalMessage);
 
     // 回复文档链接
     await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
@@ -464,7 +477,7 @@ function parseInlineText(text: string): any[] {
  * 将 Markdown 文本转换为飞书文档块
  * 支持标题、代码块、列表、引用和文本
  */
-function markdownToBlocks(markdown: string, messageLink: string): any[] {
+function markdownToBlocks(markdown: string, originalMessage: string): any[] {
   const blocks: any[] = [];
 
   // 处理 markdown 内容
@@ -619,11 +632,11 @@ function markdownToBlocks(markdown: string, messageLink: string): any[] {
   // 添加最后一个段落
   flushPara();
 
-  // 在标题后面插入引用块（说明这是 AI 回复的完整内容）
+  // 在标题后面插入引用块（显示用户的原始消息）
   const quoteBlock = {
     block_type: BlockType.QUOTE,
     quote: {
-      elements: [{ text_run: { content: `💬 此文档为 AI 回复的完整内容，因消息过长已转为云文档。` } }],
+      elements: [{ text_run: { content: originalMessage || "（原消息内容获取失败）" } }],
     },
   };
 
@@ -648,10 +661,10 @@ export async function createOverflowDocument(
   token: string,
   title: string,
   markdown: string,
-  messageLink: string
+  originalMessage: string
 ): Promise<string> {
   // 1. 将 markdown 转换为文档块
-  const blocks = markdownToBlocks(markdown, messageLink);
+  const blocks = markdownToBlocks(markdown, originalMessage);
 
   // 2. 创建文档（不指定 folder_token，创建在应用云空间）
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
