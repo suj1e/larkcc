@@ -1,5 +1,70 @@
 import * as lark from "@larksuiteoapi/node-sdk";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import { OverflowConfig } from "./config.js";
+
+// ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
+
+interface DocumentRecord {
+  id: string;           // 文档 ID
+  createdAt: number;    // 创建时间戳
+}
+
+const DOC_REGISTRY_DIR = path.join(os.homedir(), ".larkcc");
+
+function getDocRegistryPath(profile: string): string {
+  if (!profile || profile === "default") {
+    return path.join(DOC_REGISTRY_DIR, "doc-registry.json");
+  }
+  return path.join(DOC_REGISTRY_DIR, `doc-registry-${profile}.json`);
+}
+
+function loadDocRegistry(profile: string): DocumentRecord[] {
+  try {
+    const filePath = getDocRegistryPath(profile);
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    }
+  } catch {
+    // 忽略错误
+  }
+  return [];
+}
+
+function saveDocRegistry(profile: string, records: DocumentRecord[]): void {
+  if (!fs.existsSync(DOC_REGISTRY_DIR)) {
+    fs.mkdirSync(DOC_REGISTRY_DIR, { recursive: true });
+  }
+  const filePath = getDocRegistryPath(profile);
+  fs.writeFileSync(filePath, JSON.stringify(records, null, 2), "utf8");
+}
+
+function registerDocument(docId: string, profile: string): void {
+  const records = loadDocRegistry(profile);
+  records.push({
+    id: docId,
+    createdAt: Date.now(),
+  });
+  saveDocRegistry(profile, records);
+}
+
+function getOldestDocuments(profile: string, keepCount: number): DocumentRecord[] {
+  const records = loadDocRegistry(profile);
+  // 按创建时间升序排列（最旧的在前）
+  const sortedDocs = [...records].sort((a, b) => a.createdAt - b.createdAt);
+  // 返回需要删除的文档（超出保留数量的）
+  if (sortedDocs.length <= keepCount) {
+    return [];
+  }
+  return sortedDocs.slice(0, sortedDocs.length - keepCount);
+}
+
+function removeDocumentRecord(docId: string, profile: string): void {
+  const records = loadDocRegistry(profile);
+  const filtered = records.filter(r => r.id !== docId);
+  saveDocRegistry(profile, filtered);
+}
 
 export function createLarkClient(appId: string, appSecret: string) {
   return new lark.Client({ appId, appSecret });
@@ -169,7 +234,7 @@ async function replyWithDocument(
     let cleanupResult: { deleted: number; failed: number } | null = null;
     const cleanupConfig = context.overflow.document.cleanup;
     if (cleanupConfig?.enabled) {
-      cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs);
+      cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs, context.profile);
     }
 
     // 构建文档元信息
@@ -181,7 +246,10 @@ async function replyWithDocument(
     };
 
     // 创建文档（在应用云空间）
-    const docUrl = await createOverflowDocument(token, title, markdown, originalMessage, meta);
+    const { docUrl, docId } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
+
+    // 注册新文档到本地记录
+    registerDocument(docId, context.profile);
 
     // 构建回复消息
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
@@ -725,7 +793,7 @@ export async function createOverflowDocument(
   markdown: string,
   originalMessage: string,
   meta: DocumentMeta
-): Promise<string> {
+): Promise<{ docUrl: string; docId: string }> {
   // 1. 将 markdown 转换为文档块
   const blocks = markdownToBlocks(markdown, originalMessage, meta);
 
@@ -767,8 +835,11 @@ export async function createOverflowDocument(
     }
   }
 
-  // 返回文档链接
-  return `https://feishu.cn/docx/${docId}`;
+  // 返回文档链接和 ID
+  return {
+    docUrl: `https://feishu.cn/docx/${docId}`,
+    docId,
+  };
 }
 
 /**
@@ -812,98 +883,45 @@ function buildMessageLink(chatId: string, messageId: string): string {
 
 /**
  * 清理旧文档
- * 列出应用云空间中的文档，按创建时间排序，删除超出数量的旧文档
+ * 使用本地注册表追踪文档，按创建时间排序，删除超出数量的旧文档
+ * 注意：docx API 没有 DELETE 接口，需要使用 drive API 删除
  */
 async function cleanupOldDocuments(
   token: string,
-  maxDocs: number
+  maxDocs: number,
+  profile: string
 ): Promise<{ deleted: number; failed: number }> {
   const result = { deleted: 0, failed: 0 };
 
   try {
-    // 1. 获取应用云空间的 folder_token
-    const appFolderRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/appFolder", {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-      },
-    });
-    const appFolderData = await safeJsonParse(appFolderRes, "Get app folder") as {
-      data?: { folder?: { token?: string } };
-      code?: number;
-    };
+    // 获取需要删除的文档（最旧的）
+    const toDelete = getOldestDocuments(profile, maxDocs);
 
-    if (appFolderData.code !== 0 || !appFolderData.data?.folder?.token) {
-      console.error("Failed to get app folder:", appFolderData);
-      return result;
-    }
-
-    const folderToken = appFolderData.data.folder.token;
-
-    // 2. 列出文件夹中的文档
-    const files: Array<{ token: string; created_time: string }> = [];
-    let pageToken: string | undefined;
-
-    do {
-      const listUrl = new URL("https://open.feishu.cn/open-apis/drive/v1/files");
-      listUrl.searchParams.set("folder_token", folderToken);
-      listUrl.searchParams.set("page_size", "50");
-      if (pageToken) {
-        listUrl.searchParams.set("page_token", pageToken);
-      }
-
-      const listRes = await fetch(listUrl.toString(), {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
-      });
-      const listData = await safeJsonParse(listRes, "List files") as {
-        data?: {
-          files?: Array<{ token: string; type: string; created_time: string }>;
-          next_page_token?: string;
-        };
-        code?: number;
-      };
-
-      if (listData.code !== 0) {
-        console.error("Failed to list files:", listData);
-        break;
-      }
-
-      // 只收集 docx 类型的文件
-      for (const file of listData.data?.files ?? []) {
-        if (file.type === "docx" || file.type === "doc") {
-          files.push({ token: file.token, created_time: file.created_time });
-        }
-      }
-
-      pageToken = listData.data?.next_page_token;
-    } while (pageToken);
-
-    // 3. 按创建时间排序（降序，最新的在前）
-    files.sort((a, b) => new Date(b.created_time).getTime() - new Date(a.created_time).getTime());
-
-    // 4. 删除超出数量的旧文档
-    const toDelete = files.slice(maxDocs);
-    for (const file of toDelete) {
+    for (const doc of toDelete) {
       try {
-        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${file.token}`, {
+        // 使用 drive API 删除文档（docx 文档也是 drive 中的一种文件）
+        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${doc.id}?type=file`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${token}`,
           },
         });
-        const deleteData = await safeJsonParse(deleteRes, "Delete file") as { code?: number };
+        const deleteData = await safeJsonParse(deleteRes, "Delete document") as { code?: number };
 
         if (deleteData.code === 0) {
           result.deleted++;
+          // 从注册表中移除
+          removeDocumentRecord(doc.id, profile);
         } else {
           result.failed++;
-          console.error(`Failed to delete file ${file.token}:`, deleteData);
+          console.error(`Failed to delete document ${doc.id}:`, deleteData);
+          // 即使删除失败也尝试从注册表移除（可能是文档已被手动删除）
+          removeDocumentRecord(doc.id, profile);
         }
       } catch {
         result.failed++;
+        // 从注册表移除无效记录
+        removeDocumentRecord(doc.id, profile);
       }
     }
   } catch (error) {

@@ -279,10 +279,12 @@ overflow:
     title_template: "{datetime}"
     cleanup:
       enabled: true       # 是否启用自动清理
-      max_docs: 50        # 最大保留文档数
+      max_docs: 50        # 最大保留文档数（每个 profile 独立计算）
       notify: true        # 清理时是否通知
 ```
 
+- 使用本地文档注册表追踪创建的文档（`~/.larkcc/doc-registry.json`）
+- 每个 profile 独立管理，互不影响
 - 按创建时间排序，保留最新的 `max_docs` 个文档
 - 清理成功会在回复消息中附带通知
 - 删除失败会忽略并继续，不影响正常流程
@@ -332,4 +334,6 @@ overflow:
 | `~/.larkcc/state-{profile}.json` | 各 profile 状态 |
 | `~/.larkcc/lock-default.json` | 进程锁 |
 | `~/.larkcc/lock-{profile}.json` | 各 profile 进程锁 |
+| `~/.larkcc/doc-registry.json` | 默认 profile 文档注册表 |
+| `~/.larkcc/doc-registry-{profile}.json` | 各 profile 文档注册表 |
 | `~/.claude.json` | Claude onboarding（自动创建） |
