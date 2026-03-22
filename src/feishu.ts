@@ -136,20 +136,11 @@ async function replyWithDocument(
   context: ReplyContext
 ): Promise<void> {
   try {
-    // 检查 folder_token 是否配置
-    const folderToken = context.overflow.document.folder_token;
-    if (!folderToken) {
-      await sendMessageChunk(client, rootMsgId, `❌ 未配置云文档文件夹 token，请在 config.yml 中设置 overflow.document.folder_token，回退到分片发送`);
-      const chunks = splitMarkdown(markdown, CHUNK_SIZE);
-      for (let i = 0; i < chunks.length; i++) {
-        const content = `**(${i + 1}/${chunks.length})**\n${chunks[i]}`;
-        await sendMessageChunk(client, rootMsgId, content);
-      }
-      return;
-    }
-
     // 获取 token
     const token = await getTenantAccessToken(context.appId, context.appSecret);
+
+    // 获取 folder_token（可能为空，会自动创建）
+    const folderToken = context.overflow.document.folder_token;
 
     // 构建文档标题
     const now = new Date();
@@ -164,8 +155,8 @@ async function replyWithDocument(
     // 构建消息链接
     const messageLink = buildMessageLink(chatId, rootMsgId);
 
-    // 创建文档
-    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink);
+    // 创建文档（会自动创建文件夹）
+    const docUrl = await createOverflowDocument(token, folderToken, title, markdown, messageLink, context.profile);
 
     // 回复文档链接
     await sendMessageChunk(client, rootMsgId, `📝 内容较长，已写入云文档：${docUrl}`);
@@ -271,15 +262,57 @@ interface ReplyContext {
 }
 
 /**
+ * 获取或创建 larkcc 文件夹
+ * 如果 folder_token 未配置，自动在"我的空间"创建 larkcc 文件夹
+ */
+async function getOrCreateFolder(token: string, profile: string): Promise<string> {
+  const folderName = `larkcc${profile && profile !== "default" ? `-${profile}` : ""}`;
+
+  // 1. 查找现有文件夹
+  const searchRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files?folder_type=my_space&search_key=${encodeURIComponent(folderName)}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    },
+  });
+  const searchData = await searchRes.json() as { data?: { files?: Array<{ token: string; name: string; type: string }> } };
+  const existing = searchData.data?.files?.find(f => f.name === folderName && f.type === "folder");
+  if (existing?.token) {
+    return existing.token;
+  }
+
+  // 2. 创建新文件夹
+  const createRes = await fetch("https://open.feishu.cn/open-apis/drive/v1/files/create_folder", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: folderName,
+      folder_type: "my_space",
+    }),
+  });
+  const createData = await createRes.json() as { data?: { token?: string } };
+  if (createData.data?.token) {
+    return createData.data.token;
+  }
+
+  // 3. 如果创建失败，返回空字符串（文档将创建在根目录）
+  return "";
+}
+
+/**
  * 创建云文档并写入内容
- * 使用飞书 HTTP API
+ * 使用飞书 docx API，支持自动创建文件夹
  */
 export async function createOverflowDocument(
   token: string,
   folderToken: string,
   title: string,
   markdown: string,
-  messageLink: string
+  messageLink: string,
+  profile?: string
 ): Promise<string> {
   // 1. 使用 convert API 将 markdown 转换为文档块
   const contentWithLink = `> 📎 [查看原消息](${messageLink})\n\n---\n\n${markdown}`;
@@ -301,29 +334,37 @@ export async function createOverflowDocument(
     throw new Error("Failed to convert markdown to blocks");
   }
 
-  // 2. 创建文档（使用 drive.file.createFolder 创建的是文件夹，需要用其他方式创建文档）
-  // 实际上飞书没有直接创建 docx 的 API，需要通过 wiki 或其他方式
-  // 这里简化：使用 wiki.space.node.create 创建文档
-  const createRes = await fetch("https://open.feishu.cn/open-apis/wiki/v2/spaces/nodes/create", {
+  // 2. 获取或创建文件夹
+  let targetFolder = folderToken;
+  if (!targetFolder) {
+    targetFolder = await getOrCreateFolder(token, profile ?? "default");
+    // 如果获取到新 token，保存到配置
+    if (targetFolder) {
+      saveFolderToken(targetFolder, profile);
+    }
+  }
+
+  // 3. 创建文档（使用 docx API）
+  const createBody: Record<string, string> = { title };
+  if (targetFolder) {
+    createBody.folder_token = targetFolder;
+  }
+  const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      obj_type: "docx",
-      node_type: "origin",
-      title: title,
-    }),
+    body: JSON.stringify(createBody),
   });
-  const createData = await createRes.json() as { data?: { node?: { obj_token?: string } } };
-  const docToken = createData.data?.node?.obj_token;
+  const createData = await createRes.json() as { data?: { document?: { document_id?: string } } };
+  const docToken = createData.data?.document?.document_id;
 
   if (!docToken) {
     throw new Error("Failed to create document");
   }
 
-  // 3. 写入内容到文档
+  // 4. 写入内容到文档
   const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docToken}/blocks/${docToken}/children/batch_create`, {
     method: "POST",
     headers: {
