@@ -831,10 +831,18 @@ export async function createOverflowDocument(
       }),
     });
 
-    const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string; error?: any };
+    // 不使用 safeJsonParse，直接解析以获取完整错误信息
+    const responseText = await updateRes.text();
+    let updateData: any;
+    try {
+      updateData = JSON.parse(responseText);
+    } catch {
+      throw new Error(`Write content returned non-JSON: ${responseText.slice(0, 500)}`);
+    }
+
     if (updateData.code !== 0) {
       // 打印完整错误到控制台
-      console.error("[DOCX ERROR] Full response:", JSON.stringify(updateData, null, 2));
+      console.error("\n[DOCX ERROR] Full response:", JSON.stringify(updateData, null, 2));
       console.error("[DOCX ERROR] Batch size:", batch.length, "Index:", index);
       console.error("[DOCX ERROR] First block:", JSON.stringify(batch[0], null, 2));
       throw new Error(`Write content failed (${updateData.code}): ${updateData.msg}`);
