@@ -833,7 +833,11 @@ export async function createOverflowDocument(
 
     const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string; error?: any };
     if (updateData.code !== 0) {
-      throw new Error(`Write content failed (${updateData.code}): ${JSON.stringify(updateData)}`);
+      // 打印完整错误到控制台
+      console.error("[DOCX ERROR] Full response:", JSON.stringify(updateData, null, 2));
+      console.error("[DOCX ERROR] Batch size:", batch.length, "Index:", index);
+      console.error("[DOCX ERROR] First block:", JSON.stringify(batch[0], null, 2));
+      throw new Error(`Write content failed (${updateData.code}): ${updateData.msg}`);
     }
   }
 
