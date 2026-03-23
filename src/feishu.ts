@@ -463,9 +463,9 @@ const LanguageMap: Record<string, number> = {
   "ts": 74,
   "tsx": 75,
   "typescriptreact": 75,
-  "xml": 77,
-  "yaml": 78,
-  "yml": 78,
+  "xml": 1,      // 飞书不支持，回退到纯文本
+  "yaml": 1,     // 飞书不支持，回退到纯文本
+  "yml": 1,      // 飞书不支持，回退到纯文本
 };
 
 /**
