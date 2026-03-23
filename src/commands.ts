@@ -49,6 +49,7 @@ export const BUILTIN_PROMPTS: Record<string, (args: string, cwd: string) => stri
     const prompt = "先不动代码，我们头脑风暴，深度讨论方案与规划，并给出你需要确认的。";
     return args ? `${prompt}\n\n${args}` : prompt;
   },
+  "upmd":     (_, __)    => "更新 README.md（如果存在，如果不存在就新增）和 CLAUDE.md（如果存在）。确保文档与代码保持同步，包括：功能描述、使用方法、配置说明等。",
   "build":    (args, cwd) => {
     const pm = detectPkgManager(cwd);
     const cmd = pm === "cargo" ? "cargo build" : `${pm} run build`;
@@ -86,6 +87,7 @@ const HELP_TEXT = `可用命令：
   /todo             整理 TODO 清单
   /summary          生成工作日报
   /bsx [内容]       头脑风暴，不动代码
+  /upmd             更新 README.md 和 CLAUDE.md
   /build [命令]     构建项目
   /install          安装依赖
   /run [script]     运行 npm script
