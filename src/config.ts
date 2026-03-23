@@ -153,6 +153,11 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
     raw.overflow = DEFAULT_OVERFLOW;
   }
 
+  // 添加默认 image_prompt 配置（首次创建时）
+  if (!raw.image_prompt) {
+    raw.image_prompt = DEFAULT_IMAGE_PROMPT;
+  }
+
   // 确保 cleanup 配置存在（兼容旧配置）
   if (!raw.overflow.document?.cleanup) {
     raw.overflow.document = raw.overflow.document || {};
