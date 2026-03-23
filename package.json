@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Claude Code in Feishu - chat with Claude via Lark bot",
   "type": "module",
+  "packageManager": "pnpm@10.32.1",
   "bin": {
     "larkcc": "./dist/index.js"
   },

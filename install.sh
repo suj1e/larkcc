@@ -53,11 +53,17 @@ success "Node.js v$(node --version)"
 
 # ── 检测 pnpm ─────────────────────────────────────────────────
 info "Checking pnpm..."
-# 禁用 corepack 避免签名验证问题
+# 禁用 corepack（有签名验证问题），改用 npm 安装
 corepack disable 2>/dev/null || true
 if ! command -v pnpm &>/dev/null; then
   warn "pnpm not found, installing..."
   npm install -g pnpm
+fi
+# 确保版本足够新（lockfile 9.0 需要 pnpm 9+）
+PNPM_MAJOR=$(pnpm --version | cut -d. -f1)
+if [[ "$PNPM_MAJOR" -lt 9 ]]; then
+  warn "upgrading pnpm to v9+..."
+  npm install -g pnpm@latest
 fi
 success "pnpm v$(pnpm --version)"
 
@@ -70,11 +76,8 @@ success "Claude CLI: $(which claude)"
 
 # ── 安装依赖 ──────────────────────────────────────────────────
 info "Installing dependencies..."
-if [ -f "pnpm-lock.yaml" ]; then
-  pnpm install --frozen-lockfile
-else
-  pnpm i
-fi
+# 不使用 --frozen-lockfile，允许 pnpm 自动更新 lockfile
+pnpm install
 success "Dependencies installed"
 
 # ── 构建 ─────────────────────────────────────────────────────
