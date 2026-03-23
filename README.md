@@ -217,6 +217,9 @@ overflow:
 commands:
   deploy: "部署到测试环境"
 
+# 图片消息默认提示词（只发图片时会自动添加）
+image_prompt: "分析图片，给出回应"
+
 profiles:
   mybot:
     feishu:

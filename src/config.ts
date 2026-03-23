@@ -32,6 +32,7 @@ export interface ProfileConfig {
     allowed_tools?: string[];
   };
   overflow?: OverflowConfig;
+  image_prompt?: string;  // 图片消息的默认提示词
 }
 
 export interface LarkccConfig extends ProfileConfig {}
@@ -40,10 +41,12 @@ export interface RawConfig {
   feishu: FeishuConfig;          // default profile
   claude?: ProfileConfig["claude"];
   overflow?: OverflowConfig;
+  image_prompt?: string;         // 图片消息的默认提示词
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
 const DEFAULT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"];
+const DEFAULT_IMAGE_PROMPT = "分析图片，给出回应";
 const GLOBAL_CONFIG_PATH = path.join(os.homedir(), ".larkcc", "config.yml");
 const PROJECT_CONFIG_NAME = ".larkcc.yml";
 
@@ -117,6 +120,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
         },
       },
     },
+    image_prompt: raw.image_prompt ?? DEFAULT_IMAGE_PROMPT,
   };
 }
 

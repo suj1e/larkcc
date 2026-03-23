@@ -316,6 +316,7 @@ export async function downloadImage(
   imageKey: string,
 ): Promise<{ base64: string; mediaType: string } | null> {
   try {
+    console.error(`[IMAGE] Downloading image: ${imageKey}`);
     const res = await client.im.messageResource.get({
       path: { message_id: messageId, file_key: imageKey },
       params: { type: "image" },
@@ -336,8 +337,11 @@ export async function downloadImage(
     if (header.startsWith("89504e47")) mediaType = "image/png";
     else if (header.startsWith("47494638")) mediaType = "image/gif";
     else if (header.startsWith("52494646")) mediaType = "image/webp";
+    const sizeKB = Math.round(buf.length / 1024);
+    console.error(`[IMAGE] Downloaded: ${mediaType}, ${sizeKB}KB, base64=${base64.length}chars`);
     return { base64, mediaType };
-  } catch {
+  } catch (e) {
+    console.error(`[IMAGE] Download failed:`, e);
     return null;
   }
 }

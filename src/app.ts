@@ -315,7 +315,7 @@ export async function startApp(
             const img = await downloadImage(client, msg.message_id, imageKey);
             if (img) {
               images = [img];
-              text   = "请分析这张图片，根据内容执行相应操作";
+              text   = config.image_prompt ?? "分析图片，给出回应";
             } else {
               await sendText(client, chatId, "❌ 图片下载失败");
               return;
