@@ -141,7 +141,10 @@ export function parseCommand(
   }
 
   if (customCommands[cmd]) {
-    const prompt = args ? `${customCommands[cmd]}\n补充信息：${args}` : customCommands[cmd];
+    const template = customCommands[cmd];
+    const prompt = template.includes("{input}")
+      ? template.replace("{input}", args || "")
+      : (args ? `${template}\n补充信息：${args}` : template);
     return { type: "prompt", prompt };
   }
 
