@@ -4,12 +4,13 @@ import path from "path";
 import os from "os";
 import readline from "readline";
 import { execSync } from "child_process";
-import { createLarkClient, createWSClient, sendText, downloadImage } from "./feishu.js";
+import { createLarkClient, createWSClient, sendText, downloadImage, downloadFile, DownloadedFile } from "./feishu.js";
 import { runAgent, ensureEnv, ImageInput } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
 import { parseCommand } from "./commands.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
+import * as multifile from "./multifile.js";
 
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const LOCK_DIR = path.join(os.homedir(), ".larkcc");
@@ -230,7 +231,7 @@ export async function startApp(
         const senderId = data.sender.sender_id?.open_id ?? "";
         const isGroup  = msg.chat_type === "group";
 
-        if (!["text", "post", "image"].includes(msg.message_type)) return;
+        if (!["text", "post", "image", "file"].includes(msg.message_type)) return;
 
         const msgTimestamp = Number(msg.create_time);
         const now = Date.now();
@@ -278,6 +279,11 @@ export async function startApp(
         const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
         let text = "";
         let images: ImageInput[] = [];
+        let downloadedFile: DownloadedFile | null = null;
+
+        // 文件处理配置（提前定义，供多处使用）
+        const fileConfig = config.file;
+        const profileKey = profile ?? "default";
 
         if (msg.message_type === "text") {
           const raw = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
@@ -321,9 +327,94 @@ export async function startApp(
               return;
             }
           }
+        } else if (msg.message_type === "file") {
+          // 文件消息处理
+          if (!fileConfig?.enabled) {
+            await sendText(client, chatId, "❌ 文件处理功能未启用");
+            return;
+          }
+
+          const fileContent = JSON.parse(msg.content) as {
+            file_key?: string;
+            file_name?: string;
+            file_size?: number;
+          };
+          const fileKey = fileContent.file_key;
+          const fileName = fileContent.file_name ?? "unknown";
+          const fileSize = fileContent.file_size ?? 0;
+
+          if (!fileKey) {
+            await sendText(client, chatId, "❌ 无法获取文件信息");
+            return;
+          }
+
+          // 检查文件大小
+          const sizeLimit = fileConfig.size_limit ?? 30 * 1024 * 1024;
+          if (fileSize > sizeLimit) {
+            const limitMB = Math.round(sizeLimit / 1024 / 1024);
+            const sizeMB = Math.round(fileSize / 1024 / 1024);
+            await sendText(client, chatId, `❌ 文件太大（${sizeMB}MB），超过限制（${limitMB}MB）`);
+            return;
+          }
+
+          // 检查是否在多文件模式
+          if (multifile.isActive(profileKey, chatId)) {
+            // 多文件模式：下载并缓存
+            logger.dim(`[multifile] downloading file: ${fileName}`);
+            const tempDir = fileConfig.temp_dir ?? path.join(os.homedir(), ".larkcc", "temp", profileKey);
+            const file = await downloadFile(client, msg.message_id, fileKey, tempDir, fileName);
+            if (file) {
+              multifile.addItem(profileKey, chatId, { type: "file", content: file, timestamp: Date.now() });
+              const count = multifile.getItemCount(profileKey, chatId);
+              // 添加 reaction 确认
+              await client.im.messageReaction.create({
+                path: { message_id: msg.message_id },
+                data: { reaction_type: { emoji_type: "OK" } },
+              }).catch(() => {});
+              logger.dim(`[multifile] cached file ${count}: ${fileName}`);
+            } else {
+              await sendText(client, chatId, `❌ 文件下载失败：${fileName}`);
+            }
+            return; // 不继续处理，等待 /mf done
+          }
+
+          // 单文件模式：下载并处理
+          logger.dim(`downloading file: ${fileName}`);
+          const tempDir = fileConfig.temp_dir ?? path.join(os.homedir(), ".larkcc", "temp", profileKey);
+          downloadedFile = await downloadFile(client, msg.message_id, fileKey, tempDir, fileName);
+          if (!downloadedFile) {
+            await sendText(client, chatId, "❌ 文件下载失败，请重试");
+            return;
+          }
         }
 
-        if (!text && images.length === 0) return;
+        if (!text && images.length === 0 && !downloadedFile) return;
+
+        // ── 多文件模式处理 ────────────────────────────────────────
+
+        // 检查多文件模式超时
+        if (fileConfig && multifile.isActive(profileKey, chatId)) {
+          const timeout = fileConfig.multifile_timeout ?? 300;
+          const timeoutItems = multifile.checkTimeout(profileKey, chatId, timeout);
+          if (timeoutItems && timeoutItems.length > 0) {
+            logger.dim(`[multifile] timeout, auto-processing ${timeoutItems.length} items`);
+            // 超时自动处理 - 这里暂时只通知用户，不自动处理
+            await sendText(client, chatId, `⏰ 多文件模式已超时，已缓存 ${timeoutItems.length} 个项目。发送 /mf done 开始处理，或 /mf start 重新开始。`);
+            return;
+          }
+        }
+
+        // 多文件模式下，文字消息作为说明缓存
+        if (text && !text.startsWith("/") && multifile.isActive(profileKey, chatId)) {
+          multifile.addItem(profileKey, chatId, { type: "text", content: text, timestamp: Date.now() });
+          const count = multifile.getItemCount(profileKey, chatId);
+          await client.im.messageReaction.create({
+            path: { message_id: msg.message_id },
+            data: { reaction_type: { emoji_type: "OK" } },
+          }).catch(() => {});
+          logger.dim(`[multifile] cached text ${count}: ${text.slice(0, 50)}...`);
+          return;
+        }
 
         // ── Slash 命令拦截 ────────────────────────────────────
         if (text.startsWith("/")) {
@@ -345,6 +436,60 @@ export async function startApp(
 
           const result = parseCommand(text, cwd, customCommands);
           if (result) {
+            // 多文件模式命令处理
+            if (result.type === "multifile_start") {
+              const wasActive = multifile.isActive(profileKey, chatId);
+              if (wasActive) {
+                multifile.resetMode(profileKey, chatId);
+                await sendText(client, chatId, "📁 多文件模式已重置，之前的缓存已清空，请重新发送文件");
+              } else {
+                multifile.startMode(profileKey, chatId);
+                await sendText(client, chatId, "📁 多文件模式已开始，请发送文件和说明文字，完成后发送 /mf done");
+              }
+              return;
+            }
+
+            if (result.type === "multifile_done") {
+              if (!multifile.isActive(profileKey, chatId)) {
+                await sendText(client, chatId, "❌ 未在多文件模式中，请先发送 /mf start");
+                return;
+              }
+
+              const items = multifile.endMode(profileKey, chatId);
+              if (items.length === 0) {
+                await sendText(client, chatId, "❌ 没有缓存的内容，请先发送文件");
+                return;
+              }
+
+              // 构建多文件 prompt
+              const fileItems = items.filter(i => i.type === "file");
+              const textItems = items.filter(i => i.type === "text");
+
+              if (fileItems.length === 0) {
+                await sendText(client, chatId, "❌ 没有缓存文件，请先发送文件");
+                return;
+              }
+
+              // 格式化文件列表
+              const filesList = fileItems.map((item, idx) => {
+                const file = item.content as DownloadedFile;
+                return `${idx + 1}. ${file.filename}（${Math.round(file.size / 1024)}KB，${file.mime_type}）\n   路径：${file.filepath}`;
+              }).join("\n");
+
+              // 格式化文字说明
+              const textContent = textItems.map(i => i.content as string).join("\n");
+
+              // 使用配置的 multifile_prompt
+              const mfPrompt = fileConfig?.multifile_prompt ?? "分析以下 {count} 个文件：\n{files}\n\n用户说明：{text}";
+              text = mfPrompt
+                .replace("{count}", String(fileItems.length))
+                .replace("{files}", filesList)
+                .replace("{text}", textContent || "（无文字说明）");
+
+              logger.dim(`[multifile] processing ${fileItems.length} files, ${textItems.length} text items`);
+              // 继续执行，进入正常的处理流程
+            }
+
             if (result.type === "exec" || result.type === "help" || result.type === "unknown") {
               await sendText(client, chatId, result.output ?? "");
               return;
@@ -386,7 +531,25 @@ export async function startApp(
         } catch {}
 
         try {
-          await runAgent(text, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
+          // 处理单文件：修改 prompt 包含文件信息
+          let finalPrompt = text;
+          if (downloadedFile && !multifile.isActive(profileKey, chatId)) {
+            const fp = fileConfig?.prompt ?? "分析文件 {filename}（路径：{filepath}，大小：{size}，类型：{mime_type}）";
+            const sizeStr = `${Math.round(downloadedFile.size / 1024)}KB`;
+            finalPrompt = fp
+              .replace("{filename}", downloadedFile.filename)
+              .replace("{filepath}", downloadedFile.filepath)
+              .replace("{size}", sizeStr)
+              .replace("{mime_type}", downloadedFile.mime_type)
+              .replace("{file_key}", downloadedFile.file_key);
+
+            // 如果用户也发送了文字，附加到 prompt 后面
+            if (text && !text.startsWith("/")) {
+              finalPrompt = `${finalPrompt}\n\n用户说明：${text}`;
+            }
+          }
+
+          await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },

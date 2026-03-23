@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { program } from "commander";
 import chalk from "chalk";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { loadConfig, globalConfigExists, GLOBAL_CONFIG_PATH, listProfiles } from "./config.js";
 import { runSetup, runNewProfile } from "./setup.js";
 import { startApp, listRunningProcesses } from "./app.js";
@@ -31,6 +34,9 @@ program
   .option("--list-profiles",        "list all configured profiles")
   .option("--reset-session",        "clear saved Claude session")
   .option("--ps",                   "list running larkcc processes")
+  .option("--cleanup-tmp-files",    "clean up temporary files")
+  .option("--older-than <hours>",   "only clean files older than N hours", "0")
+  .option("--all",                  "clean temp files for all profiles")
   .parse(process.argv);
 
 const opts = program.opts();
@@ -96,6 +102,91 @@ if (opts.ps) {
     }
     console.log();
   }
+  process.exit(0);
+}
+
+// cleanup temp files
+if (opts.cleanupTmpFiles) {
+  const baseTempDir = path.join(os.homedir(), ".larkcc", "temp");
+  const olderThanHours = parseFloat(opts.olderThan) || 0;
+  const olderThanMs = olderThanHours * 60 * 60 * 1000;
+  const cutoffTime = Date.now() - olderThanMs;
+
+  let deletedCount = 0;
+  let deletedSize = 0;
+  let errorCount = 0;
+
+  const profilesToClean: string[] = [];
+
+  if (opts.all) {
+    // 清理所有 profile
+    if (fs.existsSync(baseTempDir)) {
+      const dirs = fs.readdirSync(baseTempDir, { withFileTypes: true });
+      for (const dir of dirs) {
+        if (dir.isDirectory()) {
+          profilesToClean.push(dir.name);
+        }
+      }
+    }
+  } else {
+    // 只清理当前 profile
+    profilesToClean.push(profile ?? "default");
+  }
+
+  console.log(chalk.cyan(`\nCleaning temporary files...`));
+  if (olderThanHours > 0) {
+    console.log(chalk.gray(`  Filter: older than ${olderThanHours} hours`));
+  }
+  console.log(chalk.gray(`  Profiles: ${profilesToClean.join(", ")}\n`));
+
+  for (const profileName of profilesToClean) {
+    const tempDir = path.join(baseTempDir, profileName);
+    if (!fs.existsSync(tempDir)) {
+      console.log(chalk.gray(`  ${profileName}: (no temp directory)`));
+      continue;
+    }
+
+    let profileDeleted = 0;
+    let profileSize = 0;
+
+    const files = fs.readdirSync(tempDir, { withFileTypes: true });
+    for (const file of files) {
+      if (!file.isFile()) continue;
+
+      const filePath = path.join(tempDir, file.name);
+      try {
+        const stat = fs.statSync(filePath);
+        if (olderThanMs > 0 && stat.mtimeMs > cutoffTime) {
+          continue; // 文件不够旧，跳过
+        }
+        const size = stat.size;
+        fs.unlinkSync(filePath);
+        profileDeleted++;
+        profileSize += size;
+      } catch (e) {
+        errorCount++;
+        console.log(chalk.yellow(`  Failed to delete: ${file.name}`));
+      }
+    }
+
+    deletedCount += profileDeleted;
+    deletedSize += profileSize;
+
+    const sizeKB = Math.round(profileSize / 1024);
+    console.log(`  ${chalk.cyan(profileName)}: ${profileDeleted} files, ${sizeKB}KB`);
+  }
+
+  console.log();
+  const totalSizeMB = (deletedSize / 1024 / 1024).toFixed(2);
+  if (deletedCount > 0) {
+    console.log(chalk.green(`✅ Cleaned ${deletedCount} files (${totalSizeMB}MB)`));
+  } else {
+    console.log(chalk.gray("No files to clean"));
+  }
+  if (errorCount > 0) {
+    console.log(chalk.yellow(`⚠️  ${errorCount} files failed to delete`));
+  }
+  console.log();
   process.exit(0);
 }
 

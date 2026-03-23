@@ -15,6 +15,15 @@ export interface CleanupConfig {
   notify: boolean;     // 清理时是否通知
 }
 
+export interface FileConfig {
+  enabled: boolean;           // 是否启用文件处理
+  size_limit: number;         // 文件大小限制 (bytes)
+  temp_dir: string;           // 临时文件目录
+  prompt: string;             // 单文件 prompt
+  multifile_prompt: string;   // 多文件 prompt
+  multifile_timeout: number;  // 多文件模式超时 (秒)
+}
+
 export interface OverflowConfig {
   mode: "chunk" | "document";
   chunk: { threshold: number };
@@ -33,6 +42,7 @@ export interface ProfileConfig {
   };
   overflow?: OverflowConfig;
   image_prompt?: string;  // 图片消息的默认提示词
+  file?: Partial<FileConfig>;  // 文件处理配置
 }
 
 export interface LarkccConfig extends ProfileConfig {}
@@ -42,6 +52,7 @@ export interface RawConfig {
   claude?: ProfileConfig["claude"];
   overflow?: OverflowConfig;
   image_prompt?: string;         // 图片消息的默认提示词
+  file?: Partial<FileConfig>;    // 文件处理配置
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
@@ -64,6 +75,15 @@ const DEFAULT_OVERFLOW: OverflowConfig = {
   },
 };
 
+const DEFAULT_FILE_CONFIG: FileConfig = {
+  enabled: true,
+  size_limit: 30 * 1024 * 1024,  // 30MB
+  temp_dir: path.join(os.homedir(), ".larkcc", "temp"),
+  prompt: "分析文件 {filename}（路径：{filepath}，大小：{size}，类型：{mime_type}）",
+  multifile_prompt: "分析以下 {count} 个文件：\n{files}\n\n用户说明：{text}",
+  multifile_timeout: 300,  // 5分钟
+};
+
 function loadYml(filePath: string): any {
   if (!fs.existsSync(filePath)) return null;
   try {
@@ -81,6 +101,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
   let feishu: FeishuConfig;
   let claude = raw.claude ?? {};
   let overflow: Partial<OverflowConfig> = raw.overflow ?? {};
+  let file: Partial<FileConfig> = raw.file ?? {};
 
   if (profile && profile !== "default") {
     const profileData = raw.profiles?.[profile];
@@ -88,6 +109,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     feishu = { ...raw.feishu, ...profileData.feishu } as FeishuConfig;
     claude = { ...claude, ...profileData.claude };
     overflow = { ...overflow, ...profileData.overflow };
+    file = { ...file, ...profileData.file };
   } else {
     feishu = raw.feishu;
   }
@@ -100,6 +122,16 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
   if (!feishu?.app_id) throw new Error("Missing feishu.app_id in config");
   if (!feishu?.app_secret) throw new Error("Missing feishu.app_secret in config");
   // owner_open_id 可以为空，首次收到消息时自动填入
+
+  // 处理 temp_dir 中的 ~ 前缀
+  let tempDir = file.temp_dir ?? DEFAULT_FILE_CONFIG.temp_dir;
+  if (tempDir.startsWith("~")) {
+    tempDir = path.join(os.homedir(), tempDir.slice(1));
+  }
+  // 为不同 profile 创建子目录
+  const profileTempDir = profile && profile !== "default"
+    ? path.join(tempDir, profile)
+    : path.join(tempDir, "default");
 
   return {
     feishu,
@@ -121,6 +153,14 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       },
     },
     image_prompt: raw.image_prompt ?? DEFAULT_IMAGE_PROMPT,
+    file: {
+      enabled: file.enabled ?? DEFAULT_FILE_CONFIG.enabled,
+      size_limit: file.size_limit ?? DEFAULT_FILE_CONFIG.size_limit,
+      temp_dir: profileTempDir,
+      prompt: file.prompt ?? DEFAULT_FILE_CONFIG.prompt,
+      multifile_prompt: file.multifile_prompt ?? DEFAULT_FILE_CONFIG.multifile_prompt,
+      multifile_timeout: file.multifile_timeout ?? DEFAULT_FILE_CONFIG.multifile_timeout,
+    },
   };
 }
 
@@ -128,7 +168,7 @@ export function globalConfigExists(): boolean {
   return fs.existsSync(GLOBAL_CONFIG_PATH);
 }
 
-export function saveProfile(profile: string | undefined, feishu: FeishuConfig): void {
+export function saveProfile(profile: string | undefined, feishu: FeishuConfig, fileConfig?: Partial<FileConfig>): void {
   const dir = path.dirname(GLOBAL_CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -156,6 +196,11 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   // 添加默认 image_prompt 配置（首次创建时）
   if (!raw.image_prompt) {
     raw.image_prompt = DEFAULT_IMAGE_PROMPT;
+  }
+
+  // 添加 file 配置（如果提供了）
+  if (fileConfig) {
+    raw.file = { ...raw.file, ...fileConfig };
   }
 
   // 确保 cleanup 配置存在（兼容旧配置）

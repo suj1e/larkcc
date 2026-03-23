@@ -113,6 +113,13 @@ larkcc --ps                     # 查看运行中的 larkcc 进程
 | `/run [script]` | 运行 npm script |
 | `/help` | 查看所有命令 |
 
+### 📁 多文件模式
+
+| 命令 | 说明 |
+|------|------|
+| `/mf start` | 开始多文件模式 |
+| `/mf done` | 结束并发送所有缓存的文件 |
+
 ### 自定义命令
 
 ```yaml
@@ -144,6 +151,59 @@ commands:
 - 单独图片消息
 - 富文本消息中的图片（支持多图）
 - 混合文字+图片
+
+## 文件支持
+
+支持发送文件给 Claude 分析：
+
+```
+你：[文件 data.xlsx] 分析这个数据
+Claude：我来读取这个文件...
+```
+
+### 单文件模式
+
+直接发送文件，Claude 自动读取并分析。
+
+### 多文件模式
+
+当需要同时分析多个文件时，使用多文件模式：
+
+```
+你：/mf start
+Claude：📁 多文件模式已开始，请发送文件和说明文字，完成后发送 /mf done
+
+你：[文件 report.xlsx]
+你：[文件 data.csv]
+你：对比分析这两个数据
+
+你：/mf done
+Claude：好的，我来分析这 2 个文件...
+```
+
+**命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `/mf start` | 开始多文件模式（重复发送会重置） |
+| `/mf done` | 结束并发送所有缓存的文件 |
+
+**超时：** 默认 5 分钟超时，超时后需要重新 `/mf start`
+
+**临时文件清理：**
+
+```bash
+# 清理当前 profile 的临时文件
+larkcc --cleanup-tmp-files
+
+# 清理超过 24 小时的文件
+larkcc --cleanup-tmp-files --older-than 24
+
+# 清理所有 profile 的临时文件
+larkcc --cleanup-tmp-files --all
+```
+
+临时文件目录：`~/.larkcc/temp/{profile}/`
 
 ## 多机器人
 
@@ -219,6 +279,15 @@ commands:
 
 # 图片消息默认提示词（只发图片时会自动添加）
 image_prompt: "分析图片，给出回应"
+
+# 文件处理配置
+file:
+  enabled: true                                              # 是否启用文件处理
+  size_limit: 31457280                                       # 文件大小限制（bytes），默认 30MB
+  temp_dir: "~/.larkcc/temp"                                 # 临时文件目录
+  prompt: "分析文件 {filename}（路径：{filepath}，大小：{size}，类型：{mime_type}）"
+  multifile_prompt: "分析以下 {count} 个文件：\n{files}\n\n用户说明：{text}"
+  multifile_timeout: 300                                     # 多文件模式超时（秒）
 
 profiles:
   mybot:
@@ -318,7 +387,7 @@ overflow:
 
 | 权限 | 用途 |
 |------|------|
-| `im:message` | 基础消息 |
+| `im:message` | 基础消息（含下载消息中的文件） |
 | `im:message:send_as_bot` | 发送消息 |
 | `im:message.p2p_msg:readonly` | 接收私聊 |
 | `im:message.group_at_msg:readonly` | 接收群 @ 消息 |
@@ -326,6 +395,8 @@ overflow:
 | `cardkit:card:write` | 发送卡片 |
 | `docx:document` | 创建/编辑云文档（超长消息写入） |
 | `drive:file` | 删除云空间文件（清理旧文档） |
+
+> 💡 `im:message` 权限已包含下载消息中资源文件（图片、文件）的能力
 
 ### 事件订阅
 
@@ -342,4 +413,6 @@ overflow:
 | `~/.larkcc/lock-{profile}.json` | 各 profile 进程锁 |
 | `~/.larkcc/doc-registry.json` | 默认 profile 文档注册表 |
 | `~/.larkcc/doc-registry-{profile}.json` | 各 profile 文档注册表 |
+| `~/.larkcc/temp/default/` | 默认 profile 临时文件目录 |
+| `~/.larkcc/temp/{profile}/` | 各 profile 临时文件目录 |
 | `~/.claude.json` | Claude onboarding（自动创建） |

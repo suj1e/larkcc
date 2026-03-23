@@ -85,12 +85,16 @@ const HELP_TEXT = `可用命令：
   /install          安装依赖
   /run [script]     运行 npm script
 
+📁 多文件模式：
+  /mf start         开始多文件模式
+  /mf done          结束并发送所有文件
+
 自定义命令在 ~/.larkcc/config.yml 的 commands 块配置。`;
 
 // ── 主处理函数 ────────────────────────────────────────────────
 
 export interface CommandResult {
-  type: "exec" | "prompt" | "unknown" | "help";
+  type: "exec" | "prompt" | "unknown" | "help" | "multifile_start" | "multifile_done";
   output?: string;
   prompt?: string;
 }
@@ -108,6 +112,21 @@ export function parseCommand(
 
   if (cmd === "help" || cmd === "h") {
     return { type: "help", output: HELP_TEXT };
+  }
+
+  // 多文件模式命令
+  if (cmd === "mf") {
+    const subCmd = args.toLowerCase().trim();
+    if (subCmd === "start") {
+      return { type: "multifile_start" };
+    } else if (subCmd === "done" || subCmd === "end") {
+      return { type: "multifile_done" };
+    } else {
+      return {
+        type: "unknown",
+        output: `未知多文件命令 /mf ${subCmd}，可用：/mf start, /mf done`,
+      };
+    }
   }
 
   if (BUILTIN_EXEC[cmd]) {
