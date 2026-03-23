@@ -817,6 +817,8 @@ export async function createOverflowDocument(
   const BATCH_SIZE = 50;
   for (let i = 0; i < blocks.length; i += BATCH_SIZE) {
     const batch = blocks.slice(i, i + BATCH_SIZE);
+    // 第一批用 index: 0 插入开头，后续用 index: -1 追加到末尾
+    const index = i === 0 ? 0 : -1;
     const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/children`, {
       method: "POST",
       headers: {
@@ -825,13 +827,13 @@ export async function createOverflowDocument(
       },
       body: JSON.stringify({
         children: batch,
-        index: i,  // 使用累积索引，确保批次按正确顺序插入
+        index,
       }),
     });
 
-    const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string };
+    const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string; error?: any };
     if (updateData.code !== 0) {
-      throw new Error(`Failed to write content: ${updateData.msg}`);
+      throw new Error(`Write content failed (${updateData.code}): ${JSON.stringify(updateData)}`);
     }
   }
 
