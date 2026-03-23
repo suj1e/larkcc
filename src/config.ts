@@ -171,7 +171,7 @@ export function globalConfigExists(): boolean {
   return fs.existsSync(GLOBAL_CONFIG_PATH);
 }
 
-export function saveProfile(profile: string | undefined, feishu: FeishuConfig, fileConfig?: Partial<FileConfig>): void {
+export function saveProfile(profile: string | undefined, feishu: FeishuConfig): void {
   const dir = path.dirname(GLOBAL_CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -201,9 +201,9 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig, f
     raw.image_prompt = DEFAULT_IMAGE_PROMPT;
   }
 
-  // 添加 file 配置（如果提供了）
-  if (fileConfig) {
-    raw.file = { ...raw.file, ...fileConfig };
+  // 添加默认 file 配置（首次创建时）
+  if (!raw.file) {
+    raw.file = DEFAULT_FILE_CONFIG;
   }
 
   // 确保 cleanup 配置存在（兼容旧配置）

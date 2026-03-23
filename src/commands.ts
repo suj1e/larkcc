@@ -45,6 +45,10 @@ export const BUILTIN_PROMPTS: Record<string, (args: string, cwd: string) => stri
   "pr":       (_, __)    => "基于当前分支的改动，生成详细的 PR 描述，包括改动说明、测试方案、注意事项",
   "todo":     (_, __)    => "扫描项目里所有的 TODO、FIXME、HACK 注释，整理成优先级清单并给出建议",
   "summary":  (_, __)    => "总结今天的代码改动，生成简洁的工作日报",
+  "bsx":      (args, __) => {
+    const prompt = "先不动代码，我们头脑风暴，深度讨论方案与规划，并给出你需要确认的。";
+    return args ? `${prompt}\n\n${args}` : prompt;
+  },
   "build":    (args, cwd) => {
     const pm = detectPkgManager(cwd);
     const cmd = pm === "cargo" ? "cargo build" : `${pm} run build`;
@@ -81,6 +85,7 @@ const HELP_TEXT = `可用命令：
   /pr               生成 PR 描述
   /todo             整理 TODO 清单
   /summary          生成工作日报
+  /bsx [内容]       头脑风暴，不动代码
   /build [命令]     构建项目
   /install          安装依赖
   /run [script]     运行 npm script
