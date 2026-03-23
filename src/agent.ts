@@ -72,16 +72,35 @@ export async function runAgent(
   }
   promptContent.push({ type: "text", text: prompt });
 
-  for await (const event of query({
-    prompt: promptContent.length === 1 ? prompt : promptContent,
-    options: {
-      cwd,
-      resume: sessionId,
-      permissionMode: config.claude.permission_mode as "acceptEdits",
-      allowedTools: config.claude.allowed_tools,
-      abortSignal,
-    },
-  } as any)) {
+  // 如果有图片，使用 AsyncIterable<SDKUserMessage> 格式
+  // 否则使用普通字符串
+  const hasImages = images && images.length > 0;
+
+  async function* messageGenerator(): AsyncGenerator<any> {
+    yield {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: promptContent,
+      },
+      parent_tool_use_id: null,
+      session_id: sessionId || crypto.randomUUID(),
+    };
+  }
+
+  const queryPrompt = hasImages ? messageGenerator() : prompt;
+
+  try {
+    for await (const event of query({
+      prompt: queryPrompt,
+      options: {
+        cwd,
+        resume: sessionId,
+        permissionMode: config.claude.permission_mode as "acceptEdits",
+        allowedTools: config.claude.allowed_tools,
+        abortSignal,
+      },
+    } as any)) {
     // 检查是否已中断
     if (abortSignal?.aborted) {
       logger.info("Agent aborted by user");
@@ -177,6 +196,10 @@ export async function runAgent(
       }
       logger.reply(chatId);
     }
+  }
+  } catch (err) {
+    console.error(`[query error]:`, err);
+    throw err;
   }
 }
 
