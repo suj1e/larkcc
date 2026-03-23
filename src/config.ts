@@ -43,6 +43,7 @@ export interface ProfileConfig {
   overflow?: OverflowConfig;
   image_prompt?: string;  // 图片消息的默认提示词
   file?: Partial<FileConfig>;  // 文件处理配置
+  commands?: Record<string, string>;  // 自定义命令
 }
 
 export interface LarkccConfig extends ProfileConfig {}
@@ -53,6 +54,7 @@ export interface RawConfig {
   overflow?: OverflowConfig;
   image_prompt?: string;         // 图片消息的默认提示词
   file?: Partial<FileConfig>;    // 文件处理配置
+  commands?: Record<string, string>;  // 自定义命令
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
@@ -161,6 +163,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       multifile_prompt: file.multifile_prompt ?? DEFAULT_FILE_CONFIG.multifile_prompt,
       multifile_timeout: file.multifile_timeout ?? DEFAULT_FILE_CONFIG.multifile_timeout,
     },
+    commands: raw.commands,
   };
 }
 
