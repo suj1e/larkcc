@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2025-03-24
+
+### Fixed
+
+- npm global install executable permission issue (added `bin/larkcc` wrapper script)
+- Version number now syncs with `package.json` automatically via build script
+
+### Changed
+
+- Update bin entry to use wrapper script instead of direct JS file
+- Add `prebuild` script to auto-generate `src/version.ts`
+- Remove incorrect troubleshooting section from README
+
 ## [0.1.4] - 2025-03-24
 
 ### Added
