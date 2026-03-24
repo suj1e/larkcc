@@ -369,6 +369,10 @@ profiles:
 
 - 支持 Markdown 格式（标题、代码块、列表等）
 
+**无效图片过滤：**
+
+当内容包含 `blob:` 格式的无效图片 URL（如 websearch 返回的临时图片）时，系统会自动过滤并在消息末尾提示。
+
 **自动清理：**
 
 创建新文档时，会自动清理超出数量的旧文档：
@@ -588,6 +592,8 @@ You: [Screenshot] Help me implement this UI
 You: [Error screenshot] How to fix this
 You: [Rich text with multiple images] Analyze these images
 ```
+
+> **Note:** Invalid image URLs (like `blob:` URLs from websearch) are automatically filtered.
 
 ## File Support
 
