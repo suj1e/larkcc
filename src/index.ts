@@ -9,6 +9,7 @@ import { runSetup, runNewProfile } from "./setup.js";
 import { startApp, listRunningProcesses, killProcess, killAllProcesses } from "./app.js";
 import { logger } from "./logger.js";
 import { clearSession, initSession } from "./session.js";
+import { VERSION } from "./version.js";
 
 function printBanner(version: string) {
   console.log(chalk.cyan(`
@@ -25,7 +26,7 @@ function printBanner(version: string) {
 program
   .name("larkcc")
   .description("Claude Code in Feishu — chat with Claude via Lark bot")
-  .version("0.1.0")
+  .version(VERSION)
   .option("-d, --daemon",           "run as background process")
   .option("-c, --continue",         "resume last Claude session")
   .option("-p, --profile <name>",   "use a specific Feishu bot profile")
@@ -296,7 +297,7 @@ if (opts.resetSession) {
   process.exit(0);
 }
 
-printBanner("0.1.0");
+printBanner(VERSION);
 
 // setup
 if (opts.setup) {

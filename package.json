@@ -28,15 +28,17 @@
     "node": ">=18"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "bin": {
-    "larkcc": "./dist/index.js"
+    "larkcc": "./bin/larkcc"
   },
   "scripts": {
+    "prebuild": "node scripts/generate-version.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"

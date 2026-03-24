@@ -26,3 +26,6 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Auto-generated
+src/version.ts

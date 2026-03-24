@@ -1,0 +1,5 @@
+#!/bin/sh
+# larkcc - Claude Code in Feishu
+# https://github.com/suj1e/larkcc
+
+exec node "$(dirname "$0")/../dist/index.js" "$@"
