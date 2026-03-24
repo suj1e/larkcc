@@ -13,6 +13,34 @@ success() { echo -e "${GREEN}✅${NC} $1"; }
 warn()    { echo -e "${YELLOW}⚠${NC}  $1"; }
 error()   { echo -e "${RED}❌${NC} $1"; exit 1; }
 
+# Help function
+show_help() {
+  echo ""
+  echo -e "${CYAN}larkcc 发布脚本${NC}"
+  echo ""
+  echo "用法: ./release.sh [patch|minor|major]"
+  echo ""
+  echo "参数:"
+  echo "  patch   修复版本 (0.1.2 → 0.1.3)"
+  echo "  minor   功能版本 (0.1.2 → 0.2.0)"
+  echo "  major   主版本   (0.1.2 → 1.0.0)"
+  echo ""
+  echo "选项:"
+  echo "  -h, --help   显示帮助信息"
+  echo ""
+  echo "示例:"
+  echo "  ./release.sh patch   # 发布修复版本"
+  echo "  ./release.sh minor   # 发布功能版本"
+  echo "  ./release.sh major   # 发布主版本"
+  echo ""
+  exit 0
+}
+
+# Show help if requested
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  show_help
+fi
+
 # Check for uncommitted changes
 if [[ -n $(git status --porcelain) ]]; then
   error "有未提交的更改，请先提交"
