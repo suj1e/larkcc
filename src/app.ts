@@ -1,4 +1,5 @@
 import * as lark from "@larksuiteoapi/node-sdk";
+import chalk from "chalk";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -111,6 +112,76 @@ export function listRunningProcesses(): { processes: RunningProcess[]; cleaned: 
   processes.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
   return { processes, cleaned };
+}
+
+/**
+ * 终止指定进程
+ */
+export function killProcess(pid: number, profile: string): { success: boolean; error?: string } {
+  try {
+    console.log(chalk.cyan(`⏳ 发送 SIGTERM...`));
+    process.kill(pid, "SIGTERM");
+
+    // 等待进程终止
+    let waited = 0;
+    const maxWait = 3000; // 3 秒
+    const checkInterval = 100;
+
+    while (waited < maxWait) {
+      const alive = isProcessAlive(pid);
+      if (!alive) {
+        console.log(chalk.green(`✅ 进程已终止`));
+        clearLock(profile);
+        return { success: true };
+      }
+      waited += checkInterval;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, checkInterval);
+    }
+
+    // 3 秒后还没终止，发送 SIGKILL
+    console.log(chalk.yellow(`⏳ 进程未响应，发送 SIGKILL...`));
+    process.kill(pid, "SIGKILL");
+
+    // 再等待 1 秒
+    waited = 0;
+    while (waited < 1000) {
+      const alive = isProcessAlive(pid);
+      if (!alive) {
+        console.log(chalk.green(`✅ 进程已强制终止`));
+        clearLock(profile);
+        return { success: true };
+      }
+      waited += checkInterval;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, checkInterval);
+    }
+
+    return { success: false, error: "进程无法终止" };
+  } catch (err) {
+    const errorMsg = String(err);
+    clearLock(profile); // 清理锁文件
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * 终止所有进程
+ */
+export function killAllProcesses(processes: RunningProcess[]): { killed: number; failed: number } {
+  let killed = 0;
+  let failed = 0;
+
+  for (const p of processes) {
+    console.log(chalk.cyan(`⏳ 终止 ${p.profile} (PID: ${p.pid})...`));
+    const result = killProcess(p.pid, p.profile);
+    if (result.success) {
+      killed++;
+    } else {
+      failed++;
+      console.log(chalk.red(`   ❌ 失败: ${result.error}`));
+    }
+  }
+
+  return { killed, failed };
 }
 
 function injectClaudeEnv(): void {

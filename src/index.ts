@@ -6,7 +6,7 @@ import path from "path";
 import os from "os";
 import { loadConfig, globalConfigExists, GLOBAL_CONFIG_PATH, listProfiles } from "./config.js";
 import { runSetup, runNewProfile } from "./setup.js";
-import { startApp, listRunningProcesses } from "./app.js";
+import { startApp, listRunningProcesses, killProcess, killAllProcesses } from "./app.js";
 import { logger } from "./logger.js";
 import { clearSession, initSession } from "./session.js";
 
@@ -34,6 +34,8 @@ program
   .option("--list-profiles",        "list all configured profiles")
   .option("--reset-session",        "clear saved Claude session")
   .option("--ps",                   "list running larkcc processes")
+  .option("--kill <target>",        "kill a larkcc process by profile name or PID")
+  .option("--kill-all",             "kill all running larkcc processes")
   .option("--cleanup-tmp-files",    "clean up temporary files")
   .option("--older-than <hours>",   "only clean files older than N hours", "0")
   .option("--all",                  "clean temp files for all profiles")
@@ -103,6 +105,96 @@ if (opts.ps) {
     console.log();
   }
   process.exit(0);
+}
+
+// kill process
+if (opts.kill) {
+  const target = opts.kill;
+  const { processes } = listRunningProcesses();
+
+  // 尝试按 profile 或 PID 查找
+  const targetPid = parseInt(target);
+  const found = processes.find(p =>
+    p.profile === target || p.pid === targetPid
+  );
+
+  if (!found) {
+    console.log(chalk.red(`❌ 未找到进程: ${target}`));
+    process.exit(1);
+  }
+
+  console.log();
+  console.log(chalk.cyan(`🔍 找到进程: ${found.profile} (PID: ${found.pid})`));
+  console.log(chalk.gray(`   目录: ${found.cwd}`));
+  console.log(chalk.gray(`   启动: ${new Date(found.startedAt).toLocaleString("zh-CN")}`));
+  console.log();
+
+  // 用户确认
+  const readline = await import("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>(resolve => {
+    rl.question("确认终止? (y/n): ", resolve);
+  });
+  rl.close();
+
+  if (answer.toLowerCase() !== "y") {
+    console.log(chalk.gray("已取消"));
+    process.exit(0);
+  }
+
+  // 执行终止
+  const result = killProcess(found.pid, found.profile);
+  if (result.success) {
+    console.log(chalk.green(`✅ 进程已终止`));
+  } else {
+    console.log(chalk.red(`❌ 终止失败: ${result.error}`));
+    if (result.error?.includes("EPERM") || result.error?.includes("permission")) {
+      console.log(chalk.yellow(`   提示: 可能需要 sudo 权限`));
+    }
+  }
+  process.exit(result.success ? 0 : 1);
+}
+
+// kill all processes
+if (opts.killAll) {
+  const { processes } = listRunningProcesses();
+
+  if (processes.length === 0) {
+    console.log(chalk.gray("No running larkcc processes."));
+    process.exit(0);
+  }
+
+  console.log();
+  console.log(chalk.cyan(`🔍 找到 ${processes.length} 个运行中的进程:\n`));
+  for (let i = 0; i < processes.length; i++) {
+    const p = processes[i];
+    console.log(`  [${i + 1}] ${chalk.cyan(p.profile)} (PID: ${p.pid}) ${chalk.gray(p.cwd)}`);
+  }
+  console.log();
+
+  // 用户确认
+  const readline = await import("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>(resolve => {
+    rl.question("确认终止所有? (y/n): ", resolve);
+  });
+  rl.close();
+
+  if (answer.toLowerCase() !== "y") {
+    console.log(chalk.gray("已取消"));
+    process.exit(0);
+  }
+
+  // 执行终止
+  const result = killAllProcesses(processes);
+  console.log();
+  if (result.killed > 0) {
+    console.log(chalk.green(`✅ 已终止 ${result.killed} 个进程`));
+  }
+  if (result.failed > 0) {
+    console.log(chalk.red(`❌ ${result.failed} 个进程终止失败`));
+  }
+  process.exit(result.failed > 0 ? 1 : 0);
 }
 
 // cleanup temp files
