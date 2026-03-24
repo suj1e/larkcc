@@ -1,5 +1,9 @@
-#!/bin/sh
-# larkcc - Claude Code in Feishu
-# https://github.com/suj1e/larkcc
+#!/usr/bin/env node
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 
-exec node "$(dirname "$0")/../dist/index.js" "$@"
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const entry = resolve(__dirname, '../dist/index.js');
+
+await import(entry);
