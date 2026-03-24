@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add OIDC trusted publishing support for automated npm releases
+- Add GitHub Actions CI/CD for automated npm releases
 
 ## [0.1.0] - 2025-03-24
 
