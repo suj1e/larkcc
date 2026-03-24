@@ -20,6 +20,31 @@ chmod +x install.sh
 ./install.sh
 ```
 
+### 安装问题排查
+
+如果安装后运行 `larkcc` 提示 `command not found` 或 `permission denied`：
+
+```bash
+# 方法1：用 npx 运行（推荐）
+npx larkcc --setup
+
+# 方法2：添加 npm bin 到 PATH
+export PATH="$(npm config get prefix)/bin:$PATH"
+larkcc --setup
+```
+
+**永久解决**（添加到 shell 配置）：
+
+```bash
+# bash 用户
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# zsh 用户
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
 ## 快速开始
 
 ```bash
@@ -479,6 +504,31 @@ git clone https://github.com/suj1e/larkcc.git
 cd larkcc
 chmod +x install.sh
 ./install.sh
+```
+
+### Troubleshooting
+
+If `larkcc` shows `command not found` or `permission denied` after installation:
+
+```bash
+# Method 1: Use npx (recommended)
+npx larkcc --setup
+
+# Method 2: Add npm bin to PATH
+export PATH="$(npm config get prefix)/bin:$PATH"
+larkcc --setup
+```
+
+**Permanent fix** (add to shell config):
+
+```bash
+# For bash
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# For zsh
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ## Quick Start
