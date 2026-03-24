@@ -24,7 +24,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
@@ -35,4 +35,4 @@ jobs:
         run: pnpm build
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: npm publish --access public
