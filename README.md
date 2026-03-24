@@ -57,6 +57,8 @@ larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 
 # 进程管理
 larkcc --ps                     # 查看运行中的 larkcc 进程
+larkcc --kill <profile|pid>     # 终止指定进程
+larkcc --kill-all               # 终止所有进程
 ```
 
 ## 群聊支持
@@ -516,6 +518,8 @@ larkcc -p mybot --reset-session # Clear mybot session
 
 # Process management
 larkcc --ps                     # View running larkcc processes
+larkcc --kill <profile|pid>     # Kill a specific process
+larkcc --kill-all               # Kill all processes
 ```
 
 ## Group Chat Support

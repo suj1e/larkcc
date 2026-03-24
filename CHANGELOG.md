@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-03-24
+
+### Added
+
+- Add `--kill <profile|pid>` command to terminate a specific process
+- Add `--kill-all` command to terminate all running processes
+- User confirmation before killing processes
+- Graceful termination with SIGTERM, force kill with SIGKILL if needed
+
+### Changed
+
+- Add Feishu notification for release status (success/failure)
+
 ## [0.1.3] - 2025-03-24
 
 ### Fixed
