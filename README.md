@@ -8,7 +8,13 @@ Claude Code in Feishu — 在任意项目目录启动，通过飞书机器人与
 ## 安装
 
 ```bash
-git clone <repo>
+npm install -g larkcc
+```
+
+### 从源码安装
+
+```bash
+git clone https://github.com/suj1e/larkcc.git
 cd larkcc
 chmod +x install.sh
 ./install.sh
@@ -458,6 +464,15 @@ Claude Code in Feishu/Lark — Start in any project directory, chat with Claude 
 
 ```bash
 npm install -g larkcc
+```
+
+### Install from Source
+
+```bash
+git clone https://github.com/suj1e/larkcc.git
+cd larkcc
+chmod +x install.sh
+./install.sh
 ```
 
 ## Quick Start
