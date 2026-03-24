@@ -1,5 +1,8 @@
 # larkcc
 
+[![npm version](https://badge.fury.io/js/larkcc.svg)](https://badge.fury.io/js/larkcc)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Claude Code in Feishu — 在任意项目目录启动，通过飞书机器人与 Claude 对话，体验等同于终端直接使用 Claude Code。
 
 ## 安装
@@ -434,3 +437,181 @@ overflow:
 | `~/.larkcc/temp/default/` | 默认 profile 临时文件目录 |
 | `~/.larkcc/temp/{profile}/` | 各 profile 临时文件目录 |
 | `~/.claude.json` | Claude onboarding（自动创建） |
+
+---
+
+## License
+
+[MIT](LICENSE)
+
+## Disclaimer
+
+This project is not officially affiliated with Lark, Feishu, or ByteDance.
+
+---
+
+# English Documentation
+
+Claude Code in Feishu/Lark — Start in any project directory, chat with Claude via Feishu bot, experience equivalent to using Claude Code directly in terminal.
+
+## Installation
+
+```bash
+npm install -g larkcc
+```
+
+## Quick Start
+
+```bash
+# 1. Configure default bot (only need App ID and Secret)
+larkcc --setup
+
+# 2. Start in your project directory
+cd /your/project
+larkcc
+
+# 3. Send any message to the bot, it will auto-detect and save your open_id
+# ✅ Auto-detected open_id: ou_xxx
+# Now you can use it normally
+```
+
+## Commands
+
+```bash
+# Start
+larkcc                          # Default bot, new session
+larkcc --continue               # Default bot, continue last session
+larkcc -p mybot                 # Use mybot profile
+larkcc -p mybot --continue      # Use mybot profile, continue last session
+larkcc -d                       # Run in background
+
+# Configuration
+larkcc --setup                  # Configure/update default bot
+larkcc --setup -p mybot         # Configure/update mybot profile
+larkcc --new-profile            # Add new bot profile
+larkcc --list-profiles          # List all configured bots
+
+# Session management
+larkcc --reset-session          # Clear default bot session
+larkcc -p mybot --reset-session # Clear mybot session
+
+# Process management
+larkcc --ps                     # View running larkcc processes
+```
+
+## Group Chat Support
+
+Add multiple bots to the same Feishu group, control them via @ mentions or reply:
+
+```
+Group: You + BotA(project A) + BotB(project B)
+
+You: @BotA Help me analyze the login module
+BotA: OK, let me check project A's login module...
+
+You: @BotB Help me check agent.ts
+BotB: OK, let me check project B's agent.ts...
+
+You: [Reply to BotA's message] How to fix this issue?
+BotA: Continue from previous conversation...
+```
+
+**Trigger rules:**
+- Group message: @ bot or reply to bot's message to trigger
+- Direct message: Just send message directly
+
+**Session:**
+- Direct chat and group chat share the same Claude session
+- Claude remembers context regardless of where you send message
+
+**Additional Feishu permission required:**
+- `im:message.group_at_msg:readonly` — Receive group @ messages
+
+## Slash Commands
+
+Send `/command` in Feishu for quick actions:
+
+### ⚡ Quick Execute (No Claude, instant return)
+
+| Command | Description |
+|---------|-------------|
+| `/stop` `/cancel` | **Interrupt current task** |
+| `/s` `/status` | git status + recent commits |
+| `/d` `/diff` | git diff |
+| `/l` `/log` | git log |
+| `/b` `/branch` | Branch list |
+| `/pwd` | Current directory + file list |
+| `/ps` | Running processes |
+
+### 💬 Claude Shortcuts
+
+| Command | Description |
+|---------|-------------|
+| `/review` | Code review |
+| `/fix` | Fix errors |
+| `/doc` | Generate/update README |
+| `/test [file]` | Generate unit tests |
+| `/explain [file]` | Explain code |
+| `/refactor [file]` | Refactor |
+| `/commit` | Generate commit message |
+| `/pr` | Generate PR description |
+| `/todo` | Organize TODO list |
+| `/summary` | Generate daily report |
+| `/bsx [content]` | Brainstorm without code changes |
+| `/upmd` | Update README.md and CLAUDE.md |
+| `/build` | Build project |
+| `/install` | Install dependencies |
+| `/run [script]` | Run npm script |
+| `/help` | View all commands |
+
+## Image Support
+
+Supports multiple image sending methods, Claude auto-analyzes:
+
+```
+You: [Screenshot] Help me implement this UI
+You: [Error screenshot] How to fix this
+You: [Rich text with multiple images] Analyze these images
+```
+
+## File Support
+
+Send files to Claude for analysis:
+
+```
+You: [File data.xlsx] Analyze this data
+Claude: Let me read this file...
+```
+
+## Multi-Bot Support
+
+```bash
+larkcc --new-profile        # Add new bot
+larkcc --list-profiles      # List all bots
+larkcc -p mybot             # Use specified bot
+```
+
+## Feishu Open Platform Configuration
+
+> ⚠️ After changing permissions, you must **create a new version and publish**
+
+### Permissions
+
+| Permission | Purpose |
+|------------|---------|
+| `im:message` | Basic message (including file download) |
+| `im:message:send_as_bot` | Send messages |
+| `im:message.p2p_msg:readonly` | Receive direct messages |
+| `im:message.group_at_msg:readonly` | Receive group @ messages |
+| `im:message.reactions:write_only` | Add reactions |
+| `cardkit:card:write` | Send cards |
+| `docx:document` | Create/edit cloud documents |
+| `drive:file` | Delete cloud files |
+
+### Event Subscription
+
+Use **Long Connection** → Subscribe to `im.message.receive_v1`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md)

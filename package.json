@@ -1,9 +1,38 @@
 {
   "name": "larkcc",
   "version": "0.1.0",
-  "description": "Claude Code in Feishu - chat with Claude via Lark bot",
+  "description": "Claude Code in Feishu/Lark - AI coding assistant bot",
+  "author": "sujie <13156660820@163.com>",
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/suj1e/larkcc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/suj1e/larkcc/issues"
+  },
+  "homepage": "https://github.com/suj1e/larkcc#readme",
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "claude",
+    "feishu",
+    "lark",
+    "bot",
+    "chatbot",
+    "claude-code"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "bin": {
     "larkcc": "./dist/index.js"
   },
