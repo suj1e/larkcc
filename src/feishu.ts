@@ -178,8 +178,17 @@ async function sendMessageChunk(
   rootMsgId: string,
   content: string
 ): Promise<void> {
+  // 过滤 blob URL
+  const { content: sanitizedContent, filteredCount } = sanitizeContent(content);
+
+  // 追加过滤通知
+  let finalContent = sanitizedContent;
+  if (filteredCount > 0) {
+    finalContent += `\n\n（已过滤 ${filteredCount} 个无效图片）`;
+  }
+
   try {
-    const card = buildMarkdownCard(content);
+    const card = buildMarkdownCard(finalContent);
     await (client.im.message as any).reply({
       path: { message_id: rootMsgId },
       data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
@@ -188,7 +197,7 @@ async function sendMessageChunk(
     // 卡片失败 fallback 到普通文本
     await (client.im.message as any).reply({
       path: { message_id: rootMsgId },
-      data: { content: JSON.stringify({ text: content }), msg_type: "text", reply_in_thread: false },
+      data: { content: JSON.stringify({ text: finalContent }), msg_type: "text", reply_in_thread: false },
     });
   }
 }
@@ -460,12 +469,43 @@ export async function downloadFile(
   }
 }
 
+// ── 内容清理 ─────────────────────────────────────────────────
+
+/**
+ * 清理内容中的 blob URL
+ * 返回: { content: 清理后的内容, filteredCount: 过滤的 blob URL 数量 }
+ */
+function sanitizeContent(content: string): { content: string; filteredCount: number } {
+  // 统计 blob URL 数量
+  const blobMatches = content.match(/blob:https?:\/\//gi) || [];
+  const filteredCount = blobMatches.length;
+
+  if (filteredCount > 0) {
+    console.error(`[WARN] Filtered ${filteredCount} blob URL(s) from content`);
+
+    // 1. 移除 Markdown 图片 ![...](blob:...)
+    content = content.replace(/!\[[^\]]*\]\(blob:[^)]+\)/gi, '');
+
+    // 2. 保留文字，移除 blob 链接 [...](blob:...)
+    content = content.replace(/\[([^\]]+)\]\(blob:[^)]+\)/gi, '$1');
+
+    // 3. 移除独立的 blob URL
+    content = content.replace(/blob:https?:\/\/[^\s\)]+/gi, '');
+  }
+
+  return { content, filteredCount };
+}
+
 // ── 卡片构建 ─────────────────────────────────────────────────
 
-function buildMarkdownCard(markdown: string) {
+function buildMarkdownCard(markdown: string, filteredCount: number = 0) {
+  let content = markdown;
+  if (filteredCount > 0) {
+    content += `\n\n（已过滤 ${filteredCount} 个无效图片）`;
+  }
   return {
     schema: "2.0",
-    body: { elements: [{ tag: "markdown", content: markdown }] },
+    body: { elements: [{ tag: "markdown", content }] },
   };
 }
 
@@ -778,11 +818,17 @@ interface DocumentMeta {
  * 将 Markdown 文本转换为飞书文档块
  * 支持标题、代码块、列表、引用和文本
  */
-function markdownToBlocks(markdown: string, originalMessage: string, meta: DocumentMeta): any[] {
+function markdownToBlocks(markdown: string, originalMessage: string, meta: DocumentMeta): { blocks: any[]; filteredCount: number } {
   const blocks: any[] = [];
 
+  // 过滤 blob URL
+  const { content: sanitizedMarkdown, filteredCount } = sanitizeContent(markdown);
+  if (filteredCount > 0) {
+    console.error(`[WARN] Filtered ${filteredCount} blob URL(s) from document content`);
+  }
+
   // 处理 markdown 内容
-  const lines = markdown.split("\n");
+  const lines = sanitizedMarkdown.split("\n");
   let currentPara: string[] = [];
   let inCodeBlock = false;
   let codeContent: string[] = [];
@@ -979,7 +1025,17 @@ function markdownToBlocks(markdown: string, originalMessage: string, meta: Docum
     blocks.unshift(...header);
   }
 
-  return blocks;
+  // 如果有过滤的 blob URL，追加通知块
+  if (filteredCount > 0) {
+    blocks.push({
+      block_type: BlockType.TEXT,
+      text: {
+        elements: [{ text_run: { content: `（已过滤 ${filteredCount} 个无效图片）` } }],
+      },
+    });
+  }
+
+  return { blocks, filteredCount };
 }
 
 /**
@@ -992,8 +1048,8 @@ export async function createOverflowDocument(
   originalMessage: string,
   meta: DocumentMeta
 ): Promise<{ docUrl: string; docId: string }> {
-  // 1. 将 markdown 转换为文档块
-  const blocks = markdownToBlocks(markdown, originalMessage, meta);
+  // 1. 将 markdown 转换为文档块（同时过滤 blob URL）
+  const { blocks } = markdownToBlocks(markdown, originalMessage, meta);
 
   // 2. 创建文档（不指定 folder_token，创建在应用云空间）
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
