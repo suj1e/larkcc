@@ -120,6 +120,11 @@ larkcc --kill-all               # 终止所有进程
 | `/todo` | 整理 TODO 清单 |
 | `/summary` | 生成工作日报 |
 | `/bsx [内容]` | 头脑风暴，不动代码 |
+| `/quality [路径]` | 代码质量检查（类型/错误/简洁/性能） |
+| `/release [类型]` | 生成 CHANGELOG + 执行 release.sh |
+| `/check` | 综合检查（类型/lint/测试） |
+| `/security` | 安全漏洞扫描 |
+| `/deps` | 检查过期依赖 |
 | `/upmd` | 更新 README.md 和 CLAUDE.md |
 | `/build` | 构建项目 |
 | `/install` | 安装依赖 |
@@ -647,6 +652,11 @@ Send `/command` in Feishu for quick actions:
 | `/todo` | Organize TODO list |
 | `/summary` | Generate daily report |
 | `/bsx [content]` | Brainstorm without code changes |
+| `/quality [path]` | Code quality check (types/errors/simplicity/perf) |
+| `/release [type]` | Generate CHANGELOG + run release.sh |
+| `/check` | Comprehensive check (types/lint/test) |
+| `/security` | Security vulnerability scan |
+| `/deps` | Check outdated dependencies |
 | `/upmd` | Update README.md and CLAUDE.md |
 | `/build` | Build project |
 | `/install` | Install dependencies |

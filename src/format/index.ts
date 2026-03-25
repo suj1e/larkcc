@@ -35,6 +35,7 @@ export {
   isDivider,
   isBulletList,
   isOrderedList,
+  isQuote,
 } from "./parser.js";
 export type { TodoParseResult, EquationParseResult, CalloutParseResult } from "./parser.js";
 

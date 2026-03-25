@@ -21,7 +21,7 @@ export function sanitizeContent(content: string): SanitizeResult {
   // 1. 处理 blob URL
   const blobMatches = content.match(/!\[[^\]]*\]\(blob:[^)]+\)/gi) || [];
   if (blobMatches.length > 0) {
-    console.error(`[WARN] Filtered ${blobMatches.length} blob URL image(s)`);
+    console.warn(`[WARN] Filtered ${blobMatches.length} blob URL image(s)`);
 
     // 移除 Markdown 图片 ![...](blob:...)
     content = content.replace(/!\[[^\]]*\]\(blob:[^)]+\)/gi, '');
@@ -39,7 +39,7 @@ export function sanitizeContent(content: string): SanitizeResult {
   // 飞书卡片/文档不支持外部图片 URL，转为普通链接
   const externalImgMatches = content.match(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/gi) || [];
   if (externalImgMatches.length > 0) {
-    console.error(`[WARN] Converting ${externalImgMatches.length} external image URL(s) to links`);
+    console.warn(`[WARN] Converting ${externalImgMatches.length} external image URL(s) to links`);
 
     // 转换：![alt](https://...) → [alt](https://...) 🖼️
     content = content.replace(

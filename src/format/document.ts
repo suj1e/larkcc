@@ -207,7 +207,7 @@ function buildDocumentHeader(originalMessage: string, meta: DocumentMeta): Block
   if (originalMessage) {
     blocks.push({
       block_type: BlockType.QUOTE,
-      quote: { elements: parseInlineText(`> ${originalMessage}`) },
+      quote: { elements: parseInlineText(originalMessage) },
     });
   }
 

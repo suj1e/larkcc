@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-03-25
+
+### Added
+
+- New slash commands: `/quality`, `/release`, `/check`, `/security`, `/deps`
+- LanguageMap now based on official Feishu CodeLanguage enum (75 languages)
+- Reference link: https://feishu.apifox.cn/doc-1950637
+
+### Changed
+
+- `src/format/sanitize.ts`: Use `console.warn` instead of `console.error`
+- `src/format/document.ts`: Remove redundant `>` prefix in quote block parsing
+- `src/format/card.ts`: Fix type safety (`client: any` → `client: Client`, `path` → `params`)
+- `src/format/builder.ts`: Add TODO comment for table alignment limitation
+- `src/format/index.ts`: Export `isQuote` function
+
+### Fixed
+
+- `release.sh`: Remove hardcoded CHANGELOG template insertion (now handled by `/release`)
+
 ## [0.1.9] - 2025-03-25
 
 ### Added

@@ -73,25 +73,6 @@ echo ""
 info "更新 package.json..."
 npm version ${BUMP_TYPE} --no-git-tag-version
 
-# Update CHANGELOG.md
-info "更新 CHANGELOG.md..."
-TODAY=$(date +%Y-%m-%d)
-CHANGELOG_HEADER="## [${NEW_VERSION}] - ${TODAY}
-
-### Changed
-
--
-
-"
-
-# Insert new version after the header
-sed -i.bak "/## \[0.1.0\]/i ${CHANGELOG_HEADER}" CHANGELOG.md
-rm -f CHANGELOG.md.bak
-
-# Remind user to update CHANGELOG
-warn "请编辑 CHANGELOG.md 添加变更内容，然后继续"
-read -rp "  按 Enter 继续..."
-
 # Commit changes
 info "提交更改..."
 git add package.json CHANGELOG.md

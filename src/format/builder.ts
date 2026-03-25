@@ -47,6 +47,10 @@ export interface Block {
 /**
  * 解析内联 Markdown 格式
  * 支持：**bold**、*italic*、`code`、[link](url)、~~strikethrough~~
+ *
+ * 已知限制：
+ * - 不支持嵌套格式（如 **bold *italic* bold**）
+ * - 不支持反斜杠转义（如 \*not italic\*）
  */
 export function parseInlineText(text: string): TextElement[] {
   const elements: TextElement[] = [];
@@ -219,6 +223,7 @@ export interface TableData {
 }
 
 export function buildTableBlock(data: TableData): Block {
+  // TODO: 飞书表格 API 暂不支持列级对齐，alignments 预留供未来使用
   const { rows, alignments } = data;
   const columnSize = rows[0]?.length || 0;
   const rowSize = rows.length;

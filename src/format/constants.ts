@@ -46,11 +46,11 @@ export const CalloutColors = {
 
 export type CalloutType = keyof typeof CalloutColors;
 
-// 飞书官方语言ID对照表（ID范围1-75）
-// 参考：https://open.feishu.cn/document/ukTMukTMukTM/uUDN04SN0QjL1QDN/files/guide/create-document/create-new-document/create-new-document-overview
+// 飞书官方语言ID对照表（CodeLanguage 枚举，ID范围1-75）
+// 参考：https://feishu.apifox.cn/doc-1950637
 export const LanguageMap: Record<string, number> = {
   // 1 - PlainText
-  "": 1, "text": 1, "plain": 1, "txt": 1,
+  "": 1, "text": 1, "plain": 1, "txt": 1, "plaintext": 1,
   // 2 - ABAP
   "abap": 2,
   // 3 - Ada
@@ -60,13 +60,13 @@ export const LanguageMap: Record<string, number> = {
   // 5 - Apex
   "apex": 5,
   // 6 - Assembly
-  "assembly": 6, "asm": 6,
+  "assembly": 6, "asm": 6, "nasm": 6,
   // 7 - Bash
-  "bash": 7, "sh": 7, "shell": 7, "zsh": 7,
-  // 8 - C#
-  "csharp": 8, "cs": 8,
+  "bash": 7, "sh": 7, "zsh": 7,
+  // 8 - CSharp
+  "csharp": 8, "cs": 8, "c#": 8,
   // 9 - C++
-  "cpp": 9, "c++": 9, "cc": 9, "cxx": 9,
+  "cpp": 9, "c++": 9, "cc": 9, "cxx": 9, "hpp": 9,
   // 10 - C
   "c": 10, "h": 10,
   // 11 - COBOL
@@ -76,104 +76,129 @@ export const LanguageMap: Record<string, number> = {
   // 13 - CoffeeScript
   "coffeescript": 13, "coffee": 13,
   // 14 - D
-  "d": 14,
+  "d": 14, "dlang": 14,
   // 15 - Dart
   "dart": 15,
   // 16 - Delphi
   "delphi": 16, "pas": 16, "pascal": 16,
   // 17 - Django
-  "django": 17, "jinja": 17,
+  "django": 17, "jinja": 17, "jinja2": 17,
   // 18 - Dockerfile
   "dockerfile": 18, "docker": 18,
   // 19 - Erlang
   "erlang": 19,
   // 20 - Fortran
-  "fortran": 20, "f90": 20, "f95": 20,
-  // 21 - F#
-  "fsharp": 21, "fs": 21,
+  "fortran": 20, "f90": 20, "f95": 20, "f03": 20,
+  // 21 - FoxPro
+  "foxpro": 21, "vfp": 21,
   // 22 - Go
   "go": 22, "golang": 22,
   // 23 - Groovy
-  "groovy": 23,
+  "groovy": 23, "gradle": 23,
   // 24 - HTML
-  "html": 24, "htm": 24,
-  // 25 - Handlebars
-  "handlebars": 25, "hbs": 25,
-  // 26 - Haskell
-  "haskell": 26, "hs": 26,
-  // 27 - JSON
-  "json": 27,
-  // 28 - Java
-  "java": 28,
-  // 29 - JavaScript
-  "javascript": 29, "js": 29, "mjs": 29, "cjs": 29,
-  // 30 - Julia
-  "julia": 30, "jl": 30,
-  // 31 - Kotlin
-  "kotlin": 31, "kt": 31, "kts": 31,
-  // 32 - LaTeX
-  "latex": 32, "tex": 32,
-  // 33 - Less
-  "less": 33,
+  "html": 24, "htm": 24, "svelte": 24,
+  // 25 - HTMLBars
+  "htmlbars": 25, "hbs": 25, "handlebars": 25,
+  // 26 - HTTP
+  "http": 26,
+  // 27 - Haskell
+  "haskell": 27, "hs": 27,
+  // 28 - JSON
+  "json": 28, "jsonc": 28, "json5": 28,
+  // 29 - Java
+  "java": 29,
+  // 30 - JavaScript
+  "javascript": 30, "js": 30, "mjs": 30, "cjs": 30, "jsx": 30,
+  // 31 - Julia
+  "julia": 31, "jl": 31,
+  // 32 - Kotlin
+  "kotlin": 32, "kt": 32, "kts": 32,
+  // 33 - LateX
+  "latex": 33, "tex": 33,
   // 34 - Lisp
-  "lisp": 34,
-  // 35 - Lua
-  "lua": 35,
-  // 36 - MATLAB
-  "matlab": 36,
-  // 37 - Makefile
-  "makefile": 37, "make": 37, "mk": 37,
-  // 38 - Markdown
-  "markdown": 38, "md": 38,
-  // 39 - Nginx
-  "nginx": 39,
-  // 40 - Objective-C
-  "objectivec": 40, "objc": 40, "obj-c": 40,
-  // 41 - PHP
-  "php": 41,
-  // 42 - Perl
-  "perl": 42, "pl": 42, "pm": 42,
-  // 43 - PostgreSQL
-  "postgresql": 43, "postgres": 43, "pgsql": 43,
-  // 44 - PowerShell
-  "powershell": 44, "ps1": 44, "pwsh": 44,
-  // 45 - Python
-  "python": 45, "py": 45,
-  // 46 - R
-  "r": 46,
-  // 47 - Ruby
-  "ruby": 47, "rb": 47,
-  // 48 - Rust
-  "rust": 48, "rs": 48,
-  // 49 - SAS
-  "sas": 49,
-  // 50 - SCSS
-  "scss": 50, "sass": 50,
-  // 51 - SQL
-  "sql": 51,
-  // 52 - Scala
-  "scala": 52,
-  // 53 - Scheme
-  "scheme": 53, "scm": 53,
-  // 54 - Scratch
-  "scratch": 54,
-  // 55 - Shell (shell 已在 bash 中定义)
-  // 56 - Swift
-  "swift": 56,
-  // 57 - Tcl
-  "tcl": 57,
-  // 58 - TypeScript
-  "typescript": 58, "ts": 58, "tsx": 58,
-  // 59 - VBScript
-  "vbscript": 59, "vbs": 59,
-  // 60 - Vue
-  "vue": 60,
-  // 61 - XML
-  "xml": 61, "xhtml": 61, "xslt": 61,
-  // 62 - YAML
-  "yaml": 62, "yml": 62,
-  // 63 - Zig
-  "zig": 63,
+  "lisp": 34, "el": 34, "elisp": 34, "common-lisp": 34, "cl": 34,
+  // 35 - Logo
+  "logo": 35,
+  // 36 - Lua
+  "lua": 36,
+  // 37 - MATLAB
+  "matlab": 37,
+  // 38 - Makefile
+  "makefile": 38, "make": 38, "mk": 38,
+  // 39 - Markdown
+  "markdown": 39, "md": 39, "mdown": 39, "mkd": 39,
+  // 40 - Nginx
+  "nginx": 40, "nginxconf": 40,
+  // 41 - Objective
+  "objectivec": 41, "objc": 41, "obj-c": 41, "objective-c": 41, "mm": 41,
+  // 42 - OpenEdgeABL
+  "openedgeabl": 42, "abl": 42, "progress": 42, "openedge": 42,
+  // 43 - PHP
+  "php": 43,
+  // 44 - Perl
+  "perl": 44, "pl": 44, "pm": 44,
+  // 45 - PostScript
+  "postscript": 45, "ps": 45, "eps": 45,
+  // 46 - Power
+  "power": 46, "powershell": 46, "ps1": 46, "pwsh": 46,
+  // 47 - Prolog
+  "prolog": 47,
+  // 48 - ProtoBuf
+  "protobuf": 48, "proto": 48,
+  // 49 - Python
+  "python": 49, "py": 49, "py3": 49, "pyw": 49,
+  // 50 - R
+  "r": 50, "rscript": 50,
+  // 51 - RPG
+  "rpg": 51,
+  // 52 - Ruby
+  "ruby": 52, "rb": 52, "gemfile": 52, "rakefile": 52,
+  // 53 - Rust
+  "rust": 53, "rs": 53,
+  // 54 - SAS
+  "sas": 54,
+  // 55 - SCSS
+  "scss": 55, "sass": 55,
+  // 56 - SQL
+  "sql": 56, "mysql": 56, "postgresql": 56, "postgres": 56, "pgsql": 56, "sqlite": 56,
+  // 57 - Scala
+  "scala": 57, "sc": 57,
+  // 58 - Scheme
+  "scheme": 58, "scm": 58, "ss": 58, "racket": 58,
+  // 59 - Scratch
+  "scratch": 59, "sb3": 59,
+  // 60 - Shell
+  "shell": 60, "env": 60, "bashrc": 60, "zshrc": 60, "profile": 60,
+  // 61 - Swift
+  "swift": 61,
+  // 62 - Thrift
+  "thrift": 62,
+  // 63 - TypeScript
+  "typescript": 63, "ts": 63, "tsx": 63, "mts": 63, "cts": 63,
+  // 64 - VBScript
+  "vbscript": 64, "vbs": 64, "vb": 64,
+  // 65 - Visual
+  "visual": 65, "vbnet": 65, "vb.net": 65,
+  // 66 - XML
+  "xml": 66, "xhtml": 66, "xslt": 66, "xsl": 66, "xsd": 66, "svg": 66, "pom": 66,
+  // 67 - YAML
+  "yaml": 67, "yml": 67,
+  // 68 - CMake
+  "cmake": 68,
+  // 69 - Diff
+  "diff": 69, "patch": 69, "udiff": 69,
+  // 70 - Gherkin
+  "gherkin": 70, "feature": 70, "cucumber": 70,
+  // 71 - GraphQL
+  "graphql": 71, "gql": 71, "graphqls": 71,
+  // 72 - OpenGL Shading Language
+  "glsl": 72, "vert": 72, "frag": 72, "shader": 72,
+  // 73 - Properties
+  "properties": 73, "ini": 73, "conf": 73, "config": 73, "cfg": 73,
+  // 74 - Solidity
+  "solidity": 74, "sol": 74,
+  // 75 - TOML
+  "toml": 75,
   // 默认
   "default": 1,
 };

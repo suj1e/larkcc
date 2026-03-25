@@ -2,6 +2,7 @@
  * 飞书卡片处理模块
  */
 
+import type { Client } from "@larksuiteoapi/node-sdk";
 import { sanitizeContent, formatWarnings } from "./sanitize.js";
 
 /**
@@ -31,7 +32,7 @@ export function buildMarkdownCard(markdown: string, warnings: string[] = []): ob
  * 这是一个辅助函数，用于统一处理卡片消息的发送
  */
 export async function sendMarkdownCardMessage(
-  client: any,
+  client: Client,
   chatId: string,
   content: string,
   options?: {
@@ -56,7 +57,7 @@ export async function sendMarkdownCardMessage(
     });
   } else {
     await client.im.message.create({
-      path: { receive_id_type: "chat_id" },
+      params: { receive_id_type: "chat_id" },
       data: {
         receive_id: chatId,
         msg_type: "interactive",
