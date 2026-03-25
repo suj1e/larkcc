@@ -46,15 +46,16 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
     "@larksuiteoapi/node-sdk": "^1",
+    "chalk": "^5",
     "commander": "^12",
     "js-yaml": "^4",
-    "ora": "^8",
-    "chalk": "^5"
+    "ora": "^8"
   },
   "devDependencies": {
-    "tsx": "^4",
-    "typescript": "^5",
+    "@types/js-yaml": "^4",
     "@types/node": "^22",
-    "@types/js-yaml": "^4"
+    "semver": "^7.7.4",
+    "tsx": "^4",
+    "typescript": "^5"
   }
 }
