@@ -2,7 +2,7 @@
  * 飞书文档块构建器
  */
 
-import { BlockType, CalloutColors, LanguageMap, CalloutType } from "./constants.js";
+import { BlockType, CalloutColors, LanguageMap, CalloutType, ColorNameMap, AlignType } from "./constants.js";
 
 // ── 类型定义 ───────────────────────────────────────────────────
 
@@ -14,6 +14,8 @@ export interface TextElement {
   underline?: boolean;
   strikethrough?: boolean;
   inline_code?: { content: string };
+  text_color?: string;
+  background_color?: string;
 }
 
 export interface Block {
@@ -45,19 +47,77 @@ export interface Block {
 // ── 内联格式解析 ───────────────────────────────────────────────────
 
 /**
- * 解析内联 Markdown 格式
- * 支持：**bold**、*italic*、`code`、[link](url)、~~strikethrough~~
- *
- * 已知限制：
- * - 不支持嵌套格式（如 **bold *italic* bold**）
- * - 不支持反斜杠转义（如 \*not italic\*）
+ * 解析颜色值
+ * 支持颜色名称（red）和十六进制（#FF0000）
+ */
+function parseColorValue(value: string): string | null {
+  const trimmed = value.trim().toLowerCase();
+  // 十六进制颜色
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.toUpperCase();
+    if (/^#[0-9A-F]{6}$/i.test(hex) || /^#[0-9A-F]{3}$/i.test(hex)) {
+      return hex;
+    }
+    // 扩展 3 位十六进制到 6 位
+    if (/^#[0-9A-F]{3}$/i.test(hex)) {
+      return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`.toUpperCase();
+    }
+    return hex;
+  }
+  // 颜色名称
+  return ColorNameMap[trimmed] || null;
+}
+
+/**
+ * 解析 style 属性中的颜色
+ * 支持：color:red, background-color:yellow, color:#FF0000
+ */
+function parseStyleColors(style: string): { textColor?: string; bgColor?: string } {
+  const result: { textColor?: string; bgColor?: string } = {};
+
+  // 匹配 color 和 background-color
+  const colorMatch = style.match(/color\s*:\s*([^;]+)/i);
+  const bgColorMatch = style.match(/background-color\s*:\s*([^;]+)/i);
+
+  if (colorMatch) {
+    const color = parseColorValue(colorMatch[1]);
+    if (color) result.textColor = color;
+    else console.warn(`⚠️ [format] 无效颜色值: "${colorMatch[1]}"，已忽略`);
+  }
+
+  if (bgColorMatch) {
+    const color = parseColorValue(bgColorMatch[1]);
+    if (color) result.bgColor = color;
+    else console.warn(`⚠️ [format] 无效背景色值: "${bgColorMatch[1]}"，已忽略`);
+  }
+
+  return result;
+}
+
+/**
+ * 解析内联 Markdown 和 HTML 格式
+ * 支持：
+ * - **bold**、*italic*、`code`、[link](url)、~~strikethrough~~
+ * - <u>underline</u>
+ * - <span style="color:red">colored text</span>
+ * - <span style="background-color:yellow">highlighted text</span>
+ * - \ 转义
  */
 export function parseInlineText(text: string): TextElement[] {
   const elements: TextElement[] = [];
   let remaining = text;
 
+  // 处理转义后的文本
+  const unescape = (s: string) => s.replace(/\\([<>*_~`\[\]])/g, "$1");
+
   // 正则匹配各种内联格式
   const patterns = [
+    // 转义字符 \* \_ \< 等 - 先匹配，避免被其他规则捕获
+    { regex: /\\([<>*_~`\[\]])/, type: "escape" },
+    // 下划线 <u>text</u>
+    { regex: /<u>([^<]*)<\/u>/i, type: "underline" },
+    // 带颜色的 span <span style="color:red">text</span>
+    { regex: /<span\s+style\s*=\s*["']([^"']+)["']\s*>([^<]*)<\/span>/i, type: "span" },
     // 粗体 **text**
     { regex: /\*\*([^*]+)\*\*/, type: "bold" },
     // 斜体 *text* 或 _text_
@@ -79,20 +139,33 @@ export function parseInlineText(text: string): TextElement[] {
       if (match && (earliestMatch === null || match.index < earliestMatch.index)) {
         let element: TextElement;
         switch (type) {
+          case "escape":
+            element = { text_run: { content: match[1] } };
+            break;
+          case "underline":
+            element = { text_run: { content: unescape(match[1]) }, underline: true };
+            break;
+          case "span":
+            const colors = parseStyleColors(match[1]);
+            const content = unescape(match[2]);
+            element = { text_run: { content } };
+            if (colors.textColor) element.text_color = colors.textColor;
+            if (colors.bgColor) element.background_color = colors.bgColor;
+            break;
           case "bold":
-            element = { text_run: { content: match[1] }, bold: true };
+            element = { text_run: { content: unescape(match[1]) }, bold: true };
             break;
           case "italic":
-            element = { text_run: { content: match[1] || match[2] }, italic: true };
+            element = { text_run: { content: unescape(match[1] || match[2]) }, italic: true };
             break;
           case "code":
             element = { inline_code: { content: match[1] } };
             break;
           case "strikethrough":
-            element = { text_run: { content: match[1] }, strikethrough: true };
+            element = { text_run: { content: unescape(match[1]) }, strikethrough: true };
             break;
           case "link":
-            element = { link: { text_run: { content: match[1] }, href: match[2] } };
+            element = { link: { text_run: { content: unescape(match[1]) }, href: match[2] } };
             break;
           default:
             continue;
@@ -108,14 +181,14 @@ export function parseInlineText(text: string): TextElement[] {
       // 匹配前有普通文本
       const plainText = remaining.slice(0, earliestMatch.index);
       if (plainText) {
-        elements.push({ text_run: { content: plainText } });
+        elements.push({ text_run: { content: unescape(plainText) } });
       }
       elements.push(earliestMatch.element);
       remaining = remaining.slice(earliestMatch.index + earliestMatch.length);
     } else {
       // 没有匹配，全部作为普通文本
       if (remaining) {
-        elements.push({ text_run: { content: remaining } });
+        elements.push({ text_run: { content: unescape(remaining) } });
       }
       break;
     }
@@ -217,40 +290,150 @@ export function buildDividerBlock(): Block {
 
 // ── 表格构建 ───────────────────────────────────────────────────
 
+export interface CellMerge {
+  colspan: number;
+  rowspan: number;
+}
+
+export interface TableCell {
+  content: string;
+  align?: "left" | "center" | "right";
+  merge?: CellMerge;
+}
+
 export interface TableData {
-  rows: string[][];
-  alignments: ("left" | "center" | "right")[];
+  rows: TableCell[][];
+}
+
+/**
+ * 计算字符串显示宽度（中文算 2，英文算 1）
+ */
+function calculateTextWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    // CJK 字符范围
+    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(char)) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
+/**
+ * 构建表格单元格 Block
+ */
+function buildTableCell(cell: TableCell): Block {
+  const alignMap = {
+    left: AlignType.LEFT,
+    center: AlignType.CENTER,
+    right: AlignType.RIGHT,
+  };
+
+  const block: Block = {
+    block_type: BlockType.TABLE_CELL,
+    text: { elements: parseInlineText(cell.content.trim()) },
+  };
+
+  // 添加对齐属性
+  if (cell.align && cell.align !== "left") {
+    (block as any).property = { align: alignMap[cell.align] };
+  }
+
+  return block;
 }
 
 export function buildTableBlock(data: TableData): Block {
-  // TODO: 飞书表格 API 暂不支持列级对齐，alignments 预留供未来使用
-  const { rows, alignments } = data;
-  const columnSize = rows[0]?.length || 0;
-  const rowSize = rows.length;
+  const { rows } = data;
+  if (rows.length === 0 || rows[0].length === 0) {
+    return {
+      block_type: BlockType.TABLE,
+      table: {
+        property: { row_size: 0, column_size: 0, column_width: [] },
+        cells: [],
+      },
+    };
+  }
 
-  // 构建单元格
+  const rowSize = rows.length;
+  const columnSize = rows[0].length;
+
+  // 构建单元格和合并信息
   const cells: Block[] = [];
-  for (const row of rows) {
-    for (const cell of row) {
-      cells.push({
-        block_type: BlockType.TABLE_CELL,
-        text: { elements: parseInlineText(cell.trim()) },
-      } as Block);
+  const mergeInfo: Array<{ row_span: number; col_span: number; row_index: number; col_index: number }> = [];
+
+  // 追踪被合并的单元格位置
+  const mergedCells = new Set<string>();
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    for (let colIndex = 0; colIndex < rows[rowIndex].length; colIndex++) {
+      const cell = rows[rowIndex][colIndex];
+      const key = `${rowIndex}-${colIndex}`;
+
+      // 跳过被合并的单元格
+      if (mergedCells.has(key)) continue;
+
+      // 处理合并
+      if (cell.merge && (cell.merge.colspan > 1 || cell.merge.rowspan > 1)) {
+        const colspan = cell.merge.colspan || 1;
+        const rowspan = cell.merge.rowspan || 1;
+
+        mergeInfo.push({
+          row_span: rowspan,
+          col_span: colspan,
+          row_index: rowIndex,
+          col_index: colIndex,
+        });
+
+        // 标记被合并的单元格
+        for (let r = rowIndex; r < rowIndex + rowspan && r < rows.length; r++) {
+          for (let c = colIndex; c < colIndex + colspan && c < rows[r].length; c++) {
+            if (r !== rowIndex || c !== colIndex) {
+              mergedCells.add(`${r}-${c}`);
+            }
+          }
+        }
+      }
+
+      cells.push(buildTableCell(cell));
     }
   }
 
-  // 默认列宽
-  const columnWidth = new Array(columnSize).fill(100);
+  // 计算每列最大宽度
+  const columnWidths: number[] = [];
+  for (let colIndex = 0; colIndex < columnSize; colIndex++) {
+    let maxWidth = 50; // 最小宽度
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      if (colIndex < rows[rowIndex].length) {
+        const cell = rows[rowIndex][colIndex];
+        const width = calculateTextWidth(cell.content);
+        // 考虑合并单元格的宽度
+        const colspan = cell.merge?.colspan || 1;
+        if (colspan === 1) {
+          maxWidth = Math.max(maxWidth, Math.min(width * 10 + 20, 300));
+        }
+      }
+    }
+    columnWidths.push(maxWidth);
+  }
 
-  return {
+  const tableBlock: Block = {
     block_type: BlockType.TABLE,
     table: {
       property: {
         row_size: rowSize,
         column_size: columnSize,
-        column_width: columnWidth,
+        column_width: columnWidths,
       },
       cells,
     },
   };
+
+  // 添加合并信息
+  if (mergeInfo.length > 0) {
+    (tableBlock.table as any).merge_info = mergeInfo;
+  }
+
+  return tableBlock;
 }

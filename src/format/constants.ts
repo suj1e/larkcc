@@ -1,5 +1,9 @@
 /**
  * 飞书文档样式常量
+ *
+ * API 参考：
+ * - 文档块 API: https://feishu.apifox.cn/doc-1950637
+ * - 代码语言枚举: https://feishu.apifox.cn/doc-1950637
  */
 
 // 飞书文档块类型
@@ -205,3 +209,51 @@ export const LanguageMap: Record<string, number> = {
 
 // 外部图片 emoji 标识
 export const EXTERNAL_IMAGE_EMOJI = "🖼️";
+
+// CSS 颜色名称到十六进制映射表
+export const ColorNameMap: Record<string, string> = {
+  // 基础颜色
+  black: "#000000",
+  white: "#FFFFFF",
+  red: "#FF0000",
+  green: "#00FF00",
+  blue: "#0000FF",
+  yellow: "#FFFF00",
+  cyan: "#00FFFF",
+  magenta: "#FF00FF",
+  // 扩展颜色
+  orange: "#FFA500",
+  purple: "#800080",
+  pink: "#FFC0CB",
+  brown: "#A52A2A",
+  gray: "#808080",
+  grey: "#808080",
+  silver: "#C0C0C0",
+  gold: "#FFD700",
+  navy: "#000080",
+  teal: "#008080",
+  olive: "#808000",
+  maroon: "#800000",
+  aqua: "#00FFFF",
+  lime: "#00FF00",
+  coral: "#FF7F50",
+  salmon: "#FA8072",
+  tomato: "#FF6347",
+  crimson: "#DC143C",
+  indigo: "#4B0082",
+  violet: "#EE82EE",
+  skyblue: "#87CEEB",
+  lightblue: "#ADD8E6",
+  darkblue: "#00008B",
+  lightgreen: "#90EE90",
+  darkgreen: "#006400",
+  lightgray: "#D3D3D3",
+  darkgray: "#A9A9A9",
+};
+
+// 文本对齐方式
+export const AlignType = {
+  LEFT: 1,
+  CENTER: 2,
+  RIGHT: 3,
+} as const;

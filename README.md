@@ -334,6 +334,54 @@ setup 不需要填 open_id，发第一条消息自动保存。
 - ⏹ `/stop` 中断任务
 - 👥 群聊 @ 触发
 
+## Markdown 扩展语法
+
+除了标准 Markdown，还支持以下扩展语法：
+
+### 文本样式
+
+```markdown
+<u>下划线文本</u>
+
+<span style="color:red">红色文字</span>
+<span style="color:#FF0000">十六进制颜色</span>
+<span style="background-color:yellow">高亮背景</span>
+<span style="color:red;background-color:yellow">红色文字+黄色背景</span>
+```
+
+**颜色支持：**
+- 颜色名称：`red`、`blue`、`green`、`yellow`、`orange`、`purple`、`pink`、`gray`、`black`、`white` 等
+- 十六进制：`#FF0000`、`#00FF00`、`#0000FF` 等
+
+### 表格对齐
+
+```markdown
+| 左对齐 | 居中 | 右对齐 |
+| :---   | :--: | ---:   |
+| 内容   | 内容 | 内容   |
+```
+
+### 表格合并
+
+```markdown
+| <td colspan="2">跨两列</td> | 第三列 |
+| --- | --- | --- |
+| A | B | C |
+
+| <td rowspan="2">跨两行</td> | B1 |
+| --- | --- |
+| B2 | C2 |
+```
+
+### 转义
+
+使用 `\` 转义特殊字符：
+
+```markdown
+\* 不是斜体 \*
+\<u\> 显示为 <u>
+```
+
 ## 消息类型支持
 
 | 类型 | 单聊 | 群聊 |
@@ -522,6 +570,10 @@ overflow:
 | `~/.claude.json` | Claude onboarding（自动创建） |
 
 ---
+
+## API 参考
+
+- [飞书文档块 API](https://feishu.apifox.cn/doc-1950637) — 文档块类型、属性、代码语言枚举
 
 ## License
 
@@ -722,6 +774,54 @@ You: [File data.xlsx] Analyze this data
 Claude: Let me read this file...
 ```
 
+## Extended Markdown Syntax
+
+Beyond standard Markdown, the following extensions are supported:
+
+### Text Styles
+
+```markdown
+<u>Underline text</u>
+
+<span style="color:red">Red text</span>
+<span style="color:#FF0000">Hex color</span>
+<span style="background-color:yellow">Highlighted background</span>
+<span style="color:red;background-color:yellow">Red text + yellow background</span>
+```
+
+**Color support:**
+- Color names: `red`, `blue`, `green`, `yellow`, `orange`, `purple`, `pink`, `gray`, `black`, `white`, etc.
+- Hexadecimal: `#FF0000`, `#00FF00`, `#0000FF`, etc.
+
+### Table Alignment
+
+```markdown
+| Left | Center | Right |
+| :--- | :----: | ----: |
+| A    | B      | C     |
+```
+
+### Table Cell Merging
+
+```markdown
+| <td colspan="2">Span 2 columns</td> | Col 3 |
+| --- | --- | --- |
+| A   | B   | C   |
+
+| <td rowspan="2">Span 2 rows</td> | B1 |
+| --- | --- |
+| B2  | C2 |
+```
+
+### Escaping
+
+Use `\` to escape special characters:
+
+```markdown
+\* not italic \*
+\<u\> displays as <u>
+```
+
 ## Multi-Bot Support
 
 ```bash
@@ -754,3 +854,7 @@ Use **Long Connection** → Subscribe to `im.message.receive_v1`
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## API Reference
+
+- [Feishu Document Block API](https://feishu.apifox.cn/doc-1950637) — Block types, properties, code language enum

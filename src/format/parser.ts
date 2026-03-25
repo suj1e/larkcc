@@ -4,7 +4,7 @@
  */
 
 import { CalloutType } from "./constants.js";
-import { TableData } from "./builder.js";
+import { TableData, TableCell, CellMerge } from "./builder.js";
 
 // ── 表格解析 ───────────────────────────────────────────────────
 
@@ -22,29 +22,78 @@ function parseAlignment(cell: string): "left" | "center" | "right" {
 }
 
 /**
+ * 解析单元格中的 HTML 标签
+ * 支持 <td colspan="2"> 和 <td rowspan="2">
+ */
+function parseCellHtml(cell: string): TableCell {
+  const trimmed = cell.trim();
+
+  // 匹配 <td colspan="2" rowspan="1">content</td> 或 <td>content</td>
+  const tdMatch = trimmed.match(/^<td\s+([^>]*)>([^]*)<\/td>$/i);
+  if (tdMatch) {
+    const attrs = tdMatch[1];
+    const content = tdMatch[2].trim();
+
+    const result: TableCell = { content };
+
+    // 解析 colspan
+    const colspanMatch = attrs.match(/colspan\s*=\s*["']?(\d+)["']?/i);
+    if (colspanMatch) {
+      const colspan = parseInt(colspanMatch[1], 10);
+      if (colspan > 1) {
+        result.merge = { colspan, rowspan: 1 };
+      }
+    }
+
+    // 解析 rowspan
+    const rowspanMatch = attrs.match(/rowspan\s*=\s*["']?(\d+)["']?/i);
+    if (rowspanMatch) {
+      const rowspan = parseInt(rowspanMatch[1], 10);
+      if (rowspan > 1) {
+        result.merge = { ...(result.merge || { colspan: 1 }), rowspan };
+      }
+    }
+
+    return result;
+  }
+
+  // 普通 Markdown 单元格
+  return { content: trimmed };
+}
+
+/**
  * 解析表格行
  */
-function parseTableRow(line: string): string[] | null {
+function parseTableRow(line: string): TableCell[] | null {
   const trimmed = line.trim();
   if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
 
   return trimmed
     .slice(1, -1)
     .split("|")
-    .map(cell => cell.trim());
+    .map(cell => parseCellHtml(cell));
 }
 
 /**
  * 检查是否为表格分隔行
  */
 function isTableSeparator(line: string): boolean {
-  const cells = parseTableRow(line);
-  if (!cells) return false;
-  return cells.every(cell => /^:?-+:?$/.test(cell.trim()));
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return false;
+
+  const cells = trimmed
+    .slice(1, -1)
+    .split("|")
+    .map(c => c.trim());
+
+  return cells.every(cell => /^:?-+:?$/.test(cell));
 }
 
 /**
  * 解析 Markdown 表格
+ * 支持：
+ * - 标准 Markdown 表格
+ * - HTML colspan/rowspan: <td colspan="2">content</td>
  * @returns 表格数据和结束行索引，如果不是表格返回 null
  */
 export function parseTable(lines: string[], startIndex: number): { data: TableData; endIndex: number } | null {
@@ -59,24 +108,44 @@ export function parseTable(lines: string[], startIndex: number): { data: TableDa
   if (!isTableSeparator(lines[startIndex + 1])) return null;
 
   // 解析对齐方式
-  const separatorCells = parseTableRow(lines[startIndex + 1])!;
+  const separatorLine = lines[startIndex + 1].trim();
+  const separatorCells = separatorLine
+    .slice(1, -1)
+    .split("|")
+    .map(c => c.trim());
   const alignments = separatorCells.map(parseAlignment);
 
-  const rows: string[][] = [headerRow];
+  // 应用对齐到表头
+  headerRow.forEach((cell, i) => {
+    if (i < alignments.length && alignments[i] !== "left") {
+      cell.align = alignments[i];
+    }
+  });
+
+  const rows: TableCell[][] = [headerRow];
+  const columnCount = headerRow.length;
 
   // 解析数据行
   let endIndex = startIndex + 2;
   while (endIndex < lines.length) {
     const row = parseTableRow(lines[endIndex]);
     if (!row) break;
+
+    // 应用对齐到数据行
+    row.forEach((cell, i) => {
+      if (i < alignments.length && alignments[i] !== "left") {
+        cell.align = alignments[i];
+      }
+    });
+
     // 补齐列数
-    while (row.length < headerRow.length) row.push("");
-    rows.push(row.slice(0, headerRow.length));
+    while (row.length < columnCount) row.push({ content: "" });
+    rows.push(row.slice(0, columnCount));
     endIndex++;
   }
 
   return {
-    data: { rows, alignments },
+    data: { rows },
     endIndex: endIndex - 1,
   };
 }
