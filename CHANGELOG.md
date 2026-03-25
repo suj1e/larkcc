@@ -5,30 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.10] - 2026-03-25
+## [0.1.8] - 2026-03-25
 
 ### Added
 
 - New slash commands: `/quality`, `/release`, `/check`, `/security`, `/deps`
-- LanguageMap now based on official Feishu CodeLanguage enum (75 languages)
-- Reference link: https://feishu.apifox.cn/doc-1950637
-
-### Changed
-
-- `src/format/sanitize.ts`: Use `console.warn` instead of `console.error`
-- `src/format/document.ts`: Remove redundant `>` prefix in quote block parsing
-- `src/format/card.ts`: Fix type safety (`client: any` → `client: Client`, `path` → `params`)
-- `src/format/builder.ts`: Add TODO comment for table alignment limitation
-- `src/format/index.ts`: Export `isQuote` function
-
-### Fixed
-
-- `release.sh`: Remove hardcoded CHANGELOG template insertion (now handled by `/release`)
-
-## [0.1.9] - 2025-03-25
-
-### Added
-
+- Custom EXEC commands support (`exec_commands` in config.yml)
+- EXEC security control with blacklist and confirmation (`exec_security` in config.yml)
+- Template syntax for EXEC commands: `{{param}}` and `{{param|default}}`
 - External image URL handling: convert `![](https://...)` to links with 🖼️ emoji
 - New `src/format/` module for style and format handling
 - Table support in Markdown to Feishu document conversion
@@ -36,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Math equation (`$...$` / `$$...$$`) support in document conversion
 - Callout block (`> [!NOTE]` etc.) support in document conversion
 - Extended heading levels (H4-H6) in document conversion
+- LanguageMap now based on official Feishu CodeLanguage enum (75 languages)
+- Reference link: https://feishu.apifox.cn/doc-1950637
 
 ### Changed
 
@@ -48,22 +34,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `builder.ts`: Block builders
 - `sanitizeContent` now returns `{ content, warnings }` instead of `{ content, filteredCount }`
 - External images are converted to links with 🖼️ emoji instead of being removed
-
-## [0.1.8] - 2025-03-25
-
-### Added
-
-- Custom EXEC commands support (`exec_commands` in config.yml)
-- EXEC security control with blacklist and confirmation (`exec_security` in config.yml)
-- Template syntax for EXEC commands: `{{param}}` and `{{param|default}}`
-
-### Changed
-
 - Refactor slash commands: PROMPT commands now loaded from `default-prompts.yml`
 - User can now override built-in PROMPT commands via `commands` in config.yml
 - Add confirmation mechanism for dangerous EXEC commands
+- `src/format/sanitize.ts`: Use `console.warn` instead of `console.error`
+- `src/format/document.ts`: Remove redundant `>` prefix in quote block parsing
+- `src/format/card.ts`: Fix type safety (`client: any` → `client: Client`, `path` → `params`)
+- `src/format/builder.ts`: Add TODO comment for table alignment limitation
+- `src/format/index.ts`: Export `isQuote` function
 
-## [0.1.7] - 2025-03-25
+### Fixed
+
+- `release.sh`: Remove hardcoded CHANGELOG template insertion (now handled by `/release`)
+
+## [0.1.7] - 2025-03-24
 
 ### Fixed
 
