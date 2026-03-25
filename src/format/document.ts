@@ -214,12 +214,19 @@ function buildDocumentHeader(originalMessage: string, meta: DocumentMeta): Block
   // 分割线
   blocks.push(buildDividerBlock());
 
-  // 元数据
-  const metaText = `📁 工作目录: ${meta.cwd}\n🤖 机器人: ${meta.profile}\n🔗 会话ID: ${meta.sessionId}\n📅 时间: ${meta.datetime}`;
-  blocks.push({
-    block_type: BlockType.TEXT,
-    text: { elements: parseInlineText(metaText) },
-  });
+  // 元数据（每行一个 text block，确保换行）
+  const metaLines = [
+    `📁 工作目录: ${meta.cwd}`,
+    `🤖 机器人: ${meta.profile}`,
+    `🔗 会话ID: ${meta.sessionId}`,
+    `📅 时间: ${meta.datetime}`,
+  ];
+  for (const line of metaLines) {
+    blocks.push({
+      block_type: BlockType.TEXT,
+      text: { elements: [{ text_run: { content: line } }] },
+    });
+  }
 
   // 分割线
   blocks.push(buildDividerBlock());
