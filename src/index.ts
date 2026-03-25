@@ -42,7 +42,7 @@ program
   .option("-f, --force",            "skip confirmation prompt")
   .option("--cleanup-tmp-files",    "clean up temporary files")
   .option("--older-than <hours>",   "only clean files older than N hours", "0")
-  .option("--all",                  "clean temp files for all profiles")
+  .option("--cleanup-all",          "clean temp files for all profiles")
   .parse(process.argv);
 
 const opts = program.opts();
@@ -287,7 +287,7 @@ if (opts.cleanupTmpFiles) {
 
   const profilesToClean: string[] = [];
 
-  if (opts.all) {
+  if (opts.cleanupAll) {
     // 清理所有 profile
     if (fs.existsSync(baseTempDir)) {
       const dirs = fs.readdirSync(baseTempDir, { withFileTypes: true });

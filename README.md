@@ -305,7 +305,7 @@ larkcc --cleanup-tmp-files
 larkcc --cleanup-tmp-files --older-than 24
 
 # 清理所有 profile 的临时文件
-larkcc --cleanup-tmp-files --all
+larkcc --cleanup-tmp-files --cleanup-all
 ```
 
 临时文件目录：`~/.larkcc/temp/{profile}/`
