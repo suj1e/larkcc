@@ -12,6 +12,7 @@ info()    { echo -e "${CYAN}ℹ${NC}  $1"; }
 success() { echo -e "${GREEN}✅${NC} $1"; }
 warn()    { echo -e "${YELLOW}⚠${NC}  $1"; }
 error()   { echo -e "${RED}❌${NC} $1"; exit 1; }
+dim()     { echo -e "\033[0;37m$1\033[0m"; }
 
 # Help function
 show_help() {
@@ -93,7 +94,6 @@ if gh release create v${NEW_VERSION} --title "v${NEW_VERSION}" --generate-notes 
   echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   success "发布完成!"
   echo ""
-  dim() { echo -e "\033[0;37m$1\033[0m"; }
   dim "GitHub Actions 会自动发布到 npm"
   echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
@@ -106,7 +106,6 @@ else
   warn "  2. gh 未认证 (运行 gh auth login)"
   warn "  3. 网络问题"
   echo ""
-  dim() { echo -e "\033[0;37m$1\033[0m"; }
   dim "请手动创建: https://github.com/suj1e/larkcc/releases/new"
   echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
