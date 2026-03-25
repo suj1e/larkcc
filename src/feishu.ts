@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { OverflowConfig } from "./config.js";
+import { sanitizeContent, formatWarnings, BlockType, LanguageMap } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
 
@@ -178,13 +179,13 @@ async function sendMessageChunk(
   rootMsgId: string,
   content: string
 ): Promise<void> {
-  // 过滤 blob URL
-  const { content: sanitizedContent, filteredCount } = sanitizeContent(content);
+  // 过滤 blob URL 和外部图片
+  const { content: sanitizedContent, warnings } = sanitizeContent(content);
 
-  // 追加过滤通知
+  // 追加警告消息
   let finalContent = sanitizedContent;
-  if (filteredCount > 0) {
-    finalContent += `\n\n（已过滤 ${filteredCount} 个无效图片）`;
+  if (warnings.length > 0) {
+    finalContent += formatWarnings(warnings);
   }
 
   try {
@@ -469,39 +470,12 @@ export async function downloadFile(
   }
 }
 
-// ── 内容清理 ─────────────────────────────────────────────────
-
-/**
- * 清理内容中的 blob URL
- * 返回: { content: 清理后的内容, filteredCount: 过滤的 blob URL 数量 }
- */
-function sanitizeContent(content: string): { content: string; filteredCount: number } {
-  // 统计 blob URL 数量
-  const blobMatches = content.match(/blob:https?:\/\//gi) || [];
-  const filteredCount = blobMatches.length;
-
-  if (filteredCount > 0) {
-    console.error(`[WARN] Filtered ${filteredCount} blob URL(s) from content`);
-
-    // 1. 移除 Markdown 图片 ![...](blob:...)
-    content = content.replace(/!\[[^\]]*\]\(blob:[^)]+\)/gi, '');
-
-    // 2. 保留文字，移除 blob 链接 [...](blob:...)
-    content = content.replace(/\[([^\]]+)\]\(blob:[^)]+\)/gi, '$1');
-
-    // 3. 移除独立的 blob URL
-    content = content.replace(/blob:https?:\/\/[^\s\)]+/gi, '');
-  }
-
-  return { content, filteredCount };
-}
-
 // ── 卡片构建 ─────────────────────────────────────────────────
 
-function buildMarkdownCard(markdown: string, filteredCount: number = 0) {
+function buildMarkdownCard(markdown: string, warnings: string[] = []) {
   let content = markdown;
-  if (filteredCount > 0) {
-    content += `\n\n（已过滤 ${filteredCount} 个无效图片）`;
+  if (warnings.length > 0) {
+    content += formatWarnings(warnings);
   }
   return {
     schema: "2.0",
@@ -536,175 +510,6 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
     throw new Error(`${context} returned non-JSON: ${text.slice(0, 200)}`);
   }
 }
-
-// 飞书文档块类型常量（通过 API 测试验证）
-// 注意：飞书 API 的 block_type 与文档类型是一一对应的，不是用属性区分
-const BlockType = {
-  PAGE: 1,       // 页面
-  TEXT: 2,       // 文本
-  HEADING1: 3,   // 一级标题
-  HEADING2: 4,   // 二级标题
-  HEADING3: 5,   // 三级标题
-  BULLET: 12,    // 无序列表
-  ORDERED: 13,   // 有序列表
-  CODE: 14,      // 代码块
-  QUOTE: 15,     // 引用块
-  DIVIDER: 22,   // 分割线
-} as const;
-
-// 飞书官方语言ID对照表（ID范围1-75）
-// 参考：https://open.feishu.cn/document/ukTMukTMukTM/uUDN04SN0QjL1QDN/files/guide/create-document/create-new-document/create-new-document-overview
-const LanguageMap: Record<string, number> = {
-  // 1 - PlainText
-  "": 1, "text": 1, "plain": 1, "txt": 1,
-  // 2 - ABAP
-  "abap": 2,
-  // 3 - Ada
-  "ada": 3,
-  // 4 - Apache
-  "apache": 4, "apacheconf": 4,
-  // 5 - Apex
-  "apex": 5,
-  // 6 - Assembly
-  "assembly": 6, "asm": 6,
-  // 7 - Bash
-  "bash": 7, "sh": 7, "shell": 7, "zsh": 7,
-  // 8 - CSharp
-  "csharp": 8, "cs": 8, "c#": 8,
-  // 9 - C++
-  "cpp": 9, "c++": 9, "cplusplus": 9, "cc": 9, "cxx": 9,
-  // 10 - C
-  "c": 10,
-  // 11 - COBOL
-  "cobol": 11,
-  // 12 - CSS
-  "css": 12,
-  // 13 - CoffeeScript
-  "coffeescript": 13, "coffee": 13,
-  // 14 - D
-  "d": 14,
-  // 15 - Dart
-  "dart": 15,
-  // 16 - Delphi
-  "delphi": 16, "pas": 16, "pascal": 16,
-  // 17 - Django
-  "django": 17, "jinja2": 17,
-  // 18 - Dockerfile
-  "dockerfile": 18, "docker": 18,
-  // 19 - Erlang
-  "erlang": 19, "erl": 19,
-  // 20 - Fortran
-  "fortran": 20, "f90": 20,
-  // 21 - FoxPro
-  "foxpro": 21, "dbf": 21,
-  // 22 - Go
-  "go": 22, "golang": 22,
-  // 23 - Groovy
-  "groovy": 23, "gradle": 23,
-  // 24 - HTML
-  "html": 24, "htm": 24,
-  // 25 - HTMLBars
-  "htmlbars": 25, "handlebars": 25, "hbs": 25,
-  // 26 - HTTP
-  "http": 26, "https": 26,
-  // 27 - Haskell
-  "haskell": 27, "hs": 27,
-  // 28 - JSON
-  "json": 28,
-  // 29 - Java
-  "java": 29,
-  // 30 - JavaScript
-  "javascript": 30, "js": 30, "jsx": 30,
-  // 31 - Julia
-  "julia": 31,
-  // 32 - Kotlin
-  "kotlin": 32, "kt": 32, "kts": 32,
-  // 33 - LaTeX
-  "latex": 33, "tex": 33,
-  // 34 - Lisp
-  "lisp": 34, "elisp": 34, "clisp": 34,
-  // 35 - Logo
-  "logo": 35,
-  // 36 - Lua
-  "lua": 36,
-  // 37 - MATLAB
-  "matlab": 37,
-  // 38 - Makefile
-  "makefile": 38, "make": 38, "mk": 38,
-  // 39 - Markdown
-  "markdown": 39, "md": 39,
-  // 40 - Nginx
-  "nginx": 40, "nginxconf": 40,
-  // 41 - Objective-C
-  "objc": 41, "objective-c": 41, "oc": 41,
-  // 42 - OpenEdgeABL
-  "openedge": 42, "abl": 42,
-  // 43 - PHP
-  "php": 43,
-  // 44 - Perl
-  "perl": 44, "pl": 44,
-  // 45 - PostScript
-  "postscript": 45, "ps": 45,
-  // 46 - PowerShell
-  "powershell": 46, "ps1": 46, "pwsh": 46,
-  // 47 - Prolog
-  "prolog": 47,
-  // 48 - ProtoBuf
-  "protobuf": 48, "proto": 48, "pb": 48,
-  // 49 - Python
-  "python": 49, "py": 49,
-  // 50 - R
-  "r": 50,
-  // 51 - RPG
-  "rpg": 51,
-  // 52 - Ruby
-  "ruby": 52, "rb": 52,
-  // 53 - Rust
-  "rust": 53, "rs": 53,
-  // 54 - SAS
-  "sas": 54,
-  // 55 - SCSS
-  "scss": 55, "sass": 55,
-  // 56 - SQL
-  "sql": 56, "mysql": 56, "postgresql": 56, "pgsql": 56,
-  // 57 - Scala
-  "scala": 57,
-  // 58 - Scheme
-  "scheme": 58,
-  // 59 - Scratch
-  "scratch": 59,
-  // 60 - Shell (shell 别名已归入 Bash 7)
-  // 61 - Swift
-  "swift": 61,
-  // 62 - Thrift
-  "thrift": 62,
-  // 63 - TypeScript
-  "typescript": 63, "ts": 63, "tsx": 63,
-  // 64 - VBScript
-  "vbscript": 64, "vbs": 64,
-  // 65 - Visual Basic
-  "vb": 65, "visual basic": 65, "vbnet": 65,
-  // 66 - XML
-  "xml": 66,
-  // 67 - YAML
-  "yaml": 67, "yml": 67,
-  // 68 - CMake
-  "cmake": 68,
-  // 69 - Diff
-  "diff": 69, "patch": 69,
-  // 70 - Gherkin
-  "gherkin": 70, "cucumber": 70, "feature": 70,
-  // 71 - GraphQL
-  "graphql": 71, "gql": 71,
-  // 72 - OpenGL Shading Language
-  "glsl": 72, "opengl": 72,
-  // 73 - Properties
-  "properties": 73, "ini": 73, "conf": 73,
-  // 74 - Solidity
-  "solidity": 74, "sol": 74,
-  // 75 - TOML
-  "toml": 75, "tml": 75,
-};
 
 /**
  * 解析内联 Markdown 文本，支持粗体、斜体、行内代码、链接等
@@ -818,13 +623,13 @@ interface DocumentMeta {
  * 将 Markdown 文本转换为飞书文档块
  * 支持标题、代码块、列表、引用和文本
  */
-function markdownToBlocks(markdown: string, originalMessage: string, meta: DocumentMeta): { blocks: any[]; filteredCount: number } {
+function markdownToBlocks(markdown: string, originalMessage: string, meta: DocumentMeta): { blocks: any[]; warnings: string[] } {
   const blocks: any[] = [];
 
-  // 过滤 blob URL
-  const { content: sanitizedMarkdown, filteredCount } = sanitizeContent(markdown);
-  if (filteredCount > 0) {
-    console.error(`[WARN] Filtered ${filteredCount} blob URL(s) from document content`);
+  // 过滤 blob URL 和外部图片
+  const { content: sanitizedMarkdown, warnings } = sanitizeContent(markdown);
+  if (warnings.length > 0) {
+    console.error(`[WARN] Content sanitization: ${warnings.join(", ")}`);
   }
 
   // 处理 markdown 内容
@@ -1025,17 +830,17 @@ function markdownToBlocks(markdown: string, originalMessage: string, meta: Docum
     blocks.unshift(...header);
   }
 
-  // 如果有过滤的 blob URL，追加通知块
-  if (filteredCount > 0) {
+  // 如果有警告，追加通知块
+  if (warnings.length > 0) {
     blocks.push({
       block_type: BlockType.TEXT,
       text: {
-        elements: [{ text_run: { content: `（已过滤 ${filteredCount} 个无效图片）` } }],
+        elements: [{ text_run: { content: `（${warnings.join("，")}）` } }],
       },
     });
   }
 
-  return { blocks, filteredCount };
+  return { blocks, warnings };
 }
 
 /**

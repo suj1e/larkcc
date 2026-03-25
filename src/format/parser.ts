@@ -1,0 +1,262 @@
+/**
+ * Markdown 解析器
+ * 解析表格、任务列表、公式、高亮块等
+ */
+
+import { CalloutType } from "./constants.js";
+import { TableData } from "./builder.js";
+
+// ── 表格解析 ───────────────────────────────────────────────────
+
+/**
+ * 解析表格对齐方式
+ * :--- 左对齐, :---: 居中, ---: 右对齐
+ */
+function parseAlignment(cell: string): "left" | "center" | "right" {
+  const trimmed = cell.trim();
+  const left = trimmed.startsWith(":");
+  const right = trimmed.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  return "left";
+}
+
+/**
+ * 解析表格行
+ */
+function parseTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map(cell => cell.trim());
+}
+
+/**
+ * 检查是否为表格分隔行
+ */
+function isTableSeparator(line: string): boolean {
+  const cells = parseTableRow(line);
+  if (!cells) return false;
+  return cells.every(cell => /^:?-+:?$/.test(cell.trim()));
+}
+
+/**
+ * 解析 Markdown 表格
+ * @returns 表格数据和结束行索引，如果不是表格返回 null
+ */
+export function parseTable(lines: string[], startIndex: number): { data: TableData; endIndex: number } | null {
+  if (startIndex >= lines.length) return null;
+
+  // 第一行必须是表头
+  const headerRow = parseTableRow(lines[startIndex]);
+  if (!headerRow || headerRow.length === 0) return null;
+
+  // 第二行必须是分隔符
+  if (startIndex + 1 >= lines.length) return null;
+  if (!isTableSeparator(lines[startIndex + 1])) return null;
+
+  // 解析对齐方式
+  const separatorCells = parseTableRow(lines[startIndex + 1])!;
+  const alignments = separatorCells.map(parseAlignment);
+
+  const rows: string[][] = [headerRow];
+
+  // 解析数据行
+  let endIndex = startIndex + 2;
+  while (endIndex < lines.length) {
+    const row = parseTableRow(lines[endIndex]);
+    if (!row) break;
+    // 补齐列数
+    while (row.length < headerRow.length) row.push("");
+    rows.push(row.slice(0, headerRow.length));
+    endIndex++;
+  }
+
+  return {
+    data: { rows, alignments },
+    endIndex: endIndex - 1,
+  };
+}
+
+// ── 任务列表解析 ───────────────────────────────────────────────────
+
+export interface TodoParseResult {
+  content: string;
+  checked: boolean;
+}
+
+/**
+ * 解析任务列表
+ * - [ ] 未完成
+ * - [x] 已完成
+ */
+export function parseTodo(line: string): TodoParseResult | null {
+  const match = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.+)$/);
+  if (!match) return null;
+
+  return {
+    checked: match[1].toLowerCase() === "x",
+    content: match[2].trim(),
+  };
+}
+
+// ── 数学公式解析 ───────────────────────────────────────────────────
+
+export interface EquationParseResult {
+  latex: string;
+  inline: boolean;
+}
+
+/**
+ * 解析块级公式 $$...$$
+ */
+export function parseBlockEquation(lines: string[], startIndex: number): { result: EquationParseResult; endIndex: number } | null {
+  const line = lines[startIndex].trim();
+
+  // 单行公式：$$E = mc^2$$
+  const singleLineMatch = line.match(/^\$\$([^$]+)\$\$$/);
+  if (singleLineMatch) {
+    return {
+      result: { latex: singleLineMatch[1].trim(), inline: false },
+      endIndex: startIndex,
+    };
+  }
+
+  // 多行公式：$$ 开头
+  if (line !== "$$") return null;
+
+  const latexLines: string[] = [];
+  let endIndex = startIndex + 1;
+
+  while (endIndex < lines.length) {
+    if (lines[endIndex].trim() === "$$") {
+      return {
+        result: { latex: latexLines.join("\n"), inline: false },
+        endIndex,
+      };
+    }
+    latexLines.push(lines[endIndex]);
+    endIndex++;
+  }
+
+  return null;
+}
+
+/**
+ * 解析行内公式 $...$
+ */
+export function parseInlineEquation(text: string): { latex: string; remaining: string } | null {
+  const match = text.match(/^\$([^$]+)\$/);
+  if (!match) return null;
+
+  return {
+    latex: match[1].trim(),
+    remaining: text.slice(match[0].length),
+  };
+}
+
+// ── 高亮块解析 ───────────────────────────────────────────────────
+
+export interface CalloutParseResult {
+  type: CalloutType;
+  content: string[];
+}
+
+/**
+ * 解析高亮块
+ * > [!NOTE]
+ * > 这是一个提示
+ *
+ * > [!WARNING]
+ * > 这是一个警告
+ */
+export function parseCallout(lines: string[], startIndex: number): { result: CalloutParseResult; endIndex: number } | null {
+  const line = lines[startIndex].trim();
+
+  // 匹配 > [!TYPE]
+  const headerMatch = line.match(/^>\s*\[!(\w+)\]\s*$/);
+  if (!headerMatch) return null;
+
+  const type = headerMatch[1].toUpperCase() as CalloutType;
+  const content: string[] = [];
+  let endIndex = startIndex + 1;
+
+  // 收集后续的引用行
+  while (endIndex < lines.length) {
+    const nextLine = lines[endIndex].trim();
+    if (nextLine.startsWith("> ")) {
+      content.push(nextLine.slice(2));
+      endIndex++;
+    } else if (nextLine === ">") {
+      endIndex++;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    result: { type, content },
+    endIndex: endIndex - 1,
+  };
+}
+
+// ── 辅助函数 ───────────────────────────────────────────────────
+
+/**
+ * 检测标题级别
+ * @returns 标题级别 (1-6)，0 表示不是标题
+ */
+export function parseHeading(line: string): number {
+  const match = line.match(/^(#{1,6})\s/);
+  return match ? match[1].length : 0;
+}
+
+/**
+ * 检测是否为代码块开始
+ */
+export function isCodeBlockStart(line: string): { isStart: boolean; lang: string } {
+  const match = line.match(/^```(\w*)/);
+  if (match) {
+    return { isStart: true, lang: match[1] || "" };
+  }
+  return { isStart: false, lang: "" };
+}
+
+/**
+ * 检测是否为代码块结束
+ */
+export function isCodeBlockEnd(line: string): boolean {
+  return line.trim() === "```";
+}
+
+/**
+ * 检测是否为引用块
+ */
+export function isQuote(line: string): boolean {
+  return line.trim().startsWith("> ");
+}
+
+/**
+ * 检测是否为无序列表
+ */
+export function isBulletList(line: string): boolean {
+  return /^(\s*)[-*]\s+/.test(line) && !parseTodo(line);
+}
+
+/**
+ * 检测是否为有序列表
+ */
+export function isOrderedList(line: string): boolean {
+  return /^(\s*)(\d+)\.\s+/.test(line);
+}
+
+/**
+ * 检测是否为分割线
+ */
+export function isDivider(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === "---" || trimmed === "***" || trimmed === "___";
+}

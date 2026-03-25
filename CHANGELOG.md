@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2025-03-25
+
+### Added
+
+- External image URL handling: convert `![](https://...)` to links with 🖼️ emoji
+- New `src/format/` module for style and format handling
+- Table support in Markdown to Feishu document conversion
+- Task list (`- [ ]` / `- [x]`) support in document conversion
+- Math equation (`$...$` / `$$...$$`) support in document conversion
+- Callout block (`> [!NOTE]` etc.) support in document conversion
+- Extended heading levels (H4-H6) in document conversion
+
+### Changed
+
+- Refactor: extract style-related code to `src/format/` module
+  - `constants.ts`: BlockType, LanguageMap, CalloutColors
+  - `sanitize.ts`: Content sanitization (blob URL + external image)
+  - `card.ts`: Card building utilities
+  - `document.ts`: Markdown to document conversion
+  - `parser.ts`: Markdown parsers (table, todo, equation, callout)
+  - `builder.ts`: Block builders
+- `sanitizeContent` now returns `{ content, warnings }` instead of `{ content, filteredCount }`
+- External images are converted to links with 🖼️ emoji instead of being removed
+
 ## [0.1.8] - 2025-03-25
 
 ### Added
