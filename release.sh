@@ -86,16 +86,28 @@ git tag v${NEW_VERSION}
 info "推送到远程..."
 git push origin main --tags
 
-echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-success "发布准备完成!"
-echo ""
-dim() { echo -e "\033[0;37m$1\033[0m"; }
-dim "接下来:"
-dim "  1. 打开 https://github.com/suj1e/larkcc/releases/new"
-dim "  2. 选择 tag: v${NEW_VERSION}"
-dim "  3. 填写 Release 信息"
-dim "  4. 点击 Publish release"
-dim "  5. GitHub Actions 会自动发布到 npm"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
+# Create GitHub Release
+info "创建 GitHub Release..."
+if gh release create v${NEW_VERSION} --title "v${NEW_VERSION}" --generate-notes 2>/dev/null; then
+  echo ""
+  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  success "发布完成!"
+  echo ""
+  dim() { echo -e "\033[0;37m$1\033[0m"; }
+  dim "GitHub Actions 会自动发布到 npm"
+  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+else
+  echo ""
+  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  warn "创建 GitHub Release 失败"
+  warn "可能原因："
+  warn "  1. gh 未安装"
+  warn "  2. gh 未认证 (运行 gh auth login)"
+  warn "  3. 网络问题"
+  echo ""
+  dim() { echo -e "\033[0;37m$1\033[0m"; }
+  dim "请手动创建: https://github.com/suj1e/larkcc/releases/new"
+  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+fi
