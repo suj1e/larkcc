@@ -188,6 +188,89 @@ export function killAllProcesses(processes: RunningProcess[]): { killed: number;
   return { killed, failed };
 }
 
+/**
+ * 重启进程信息
+ */
+export interface RestartedProcess {
+  profile: string;
+  oldPid: number;
+  newPid: number;
+  cwd: string;
+  isContinue: boolean;
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * 重启所有进程（后台模式）
+ */
+export function restartAllProcesses(
+  processes: RunningProcess[],
+  forceContinue: boolean
+): RestartedProcess[] {
+  const results: RestartedProcess[] = [];
+  const { spawn } = require("child_process");
+
+  for (const p of processes) {
+    console.log(chalk.cyan(`⏳ 重启 ${p.profile} (PID: ${p.pid})...`));
+
+    // 先终止
+    const killResult = killProcess(p.pid, p.profile);
+    if (!killResult.success) {
+      results.push({
+        profile: p.profile,
+        oldPid: p.pid,
+        newPid: 0,
+        cwd: p.cwd,
+        isContinue: p.isContinue,
+        success: false,
+        error: killResult.error,
+      });
+      console.log(chalk.red(`   ❌ 终止失败: ${killResult.error}`));
+      continue;
+    }
+
+    // 构建启动参数
+    const useContinue = forceContinue || p.isContinue;
+    const args = [process.argv[1]];
+    if (useContinue) args.push("-c");
+    args.push("-d"); // 后台启动
+    args.push("-p", p.profile);
+
+    try {
+      const child = spawn(process.execPath, args, {
+        detached: true,
+        stdio: "ignore",
+        cwd: p.cwd,
+      });
+      child.unref();
+
+      results.push({
+        profile: p.profile,
+        oldPid: p.pid,
+        newPid: child.pid ?? 0,
+        cwd: p.cwd,
+        isContinue: useContinue,
+        success: true,
+      });
+      console.log(chalk.green(`   ✅ 已启动 (PID: ${child.pid})`));
+    } catch (err) {
+      results.push({
+        profile: p.profile,
+        oldPid: p.pid,
+        newPid: 0,
+        cwd: p.cwd,
+        isContinue: useContinue,
+        success: false,
+        error: String(err),
+      });
+      console.log(chalk.red(`   ❌ 启动失败: ${err}`));
+    }
+  }
+
+  return results;
+}
+
 function injectClaudeEnv(): void {
   try {
     if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return;

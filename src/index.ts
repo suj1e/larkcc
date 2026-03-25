@@ -6,7 +6,7 @@ import path from "path";
 import os from "os";
 import { loadConfig, globalConfigExists, GLOBAL_CONFIG_PATH, listProfiles } from "./config.js";
 import { runSetup, runNewProfile } from "./setup.js";
-import { startApp, listRunningProcesses, killProcess, killAllProcesses } from "./app.js";
+import { startApp, listRunningProcesses, killProcess, killAllProcesses, restartAllProcesses } from "./app.js";
 import { logger } from "./logger.js";
 import { clearSession, initSession } from "./session.js";
 import { VERSION } from "./version.js";
@@ -37,6 +37,9 @@ program
   .option("--ps",                   "list running larkcc processes")
   .option("--kill <target>",        "kill a larkcc process by profile name or PID")
   .option("--kill-all",             "kill all running larkcc processes")
+  .option("-r, --restart",          "restart running larkcc process(es)")
+  .option("--all",                  "restart all processes (use with --restart)")
+  .option("-f, --force",            "skip confirmation prompt")
   .option("--cleanup-tmp-files",    "clean up temporary files")
   .option("--older-than <hours>",   "only clean files older than N hours", "0")
   .option("--all",                  "clean temp files for all profiles")
@@ -196,6 +199,79 @@ if (opts.killAll) {
     console.log(chalk.red(`❌ ${result.failed} 个进程终止失败`));
   }
   process.exit(result.failed > 0 ? 1 : 0);
+}
+
+// restart processes
+if (opts.restart) {
+  const { processes } = listRunningProcesses();
+
+  if (processes.length === 0) {
+    console.log(chalk.gray("No running larkcc processes to restart."));
+    process.exit(0);
+  }
+
+  // 筛选要重启的进程
+  let targets = processes;
+  if (!opts.all) {
+    // 只重启当前 profile
+    const targetProfile = profile ?? "default";
+    targets = processes.filter(p => p.profile === targetProfile);
+    if (targets.length === 0) {
+      console.log(chalk.yellow(`进程 "${targetProfile}" 未在运行中`));
+      process.exit(1);
+    }
+  }
+
+  console.log();
+  console.log(chalk.cyan(`🔍 找到 ${targets.length} 个运行中的进程:\n`));
+  for (let i = 0; i < targets.length; i++) {
+    const p = targets[i];
+    const mode = p.isContinue ? chalk.cyan("continue") : "new";
+    console.log(`  [${i + 1}] ${chalk.cyan(p.profile)} (PID: ${p.pid}) ${mode} ${chalk.gray(p.cwd)}`);
+  }
+  console.log();
+
+  // 用户确认（除非 -f）
+  if (!opts.force) {
+    const readline = await import("readline");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise<string>(resolve => {
+      rl.question("确认重启? (y/n): ", resolve);
+    });
+    rl.close();
+
+    if (answer.toLowerCase() !== "y") {
+      console.log(chalk.gray("已取消"));
+      process.exit(0);
+    }
+  }
+
+  // 执行重启
+  console.log();
+  console.log(chalk.cyan("🚀 重启进程...\n"));
+  const forceContinue = opts.continue ?? false;
+  const results = restartAllProcesses(targets, forceContinue);
+
+  // 显示结果
+  console.log();
+  const success = results.filter(r => r.success);
+  const failed = results.filter(r => !r.success);
+
+  if (success.length > 0) {
+    console.log(chalk.green(`✅ 成功重启 ${success.length} 个进程:`));
+    for (const r of success) {
+      const mode = r.isContinue ? chalk.cyan("continue") : "new";
+      console.log(`   ${r.profile} → PID: ${r.newPid} (${mode})`);
+    }
+  }
+  if (failed.length > 0) {
+    console.log(chalk.red(`❌ ${failed.length} 个进程重启失败:`));
+    for (const r of failed) {
+      console.log(`   ${r.profile}: ${r.error}`);
+    }
+  }
+
+  process.exit(failed.length > 0 ? 1 : 0);
 }
 
 // cleanup temp files

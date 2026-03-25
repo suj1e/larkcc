@@ -59,6 +59,11 @@ larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
 larkcc --ps                     # 查看运行中的 larkcc 进程
 larkcc --kill <profile|pid>     # 终止指定进程
 larkcc --kill-all               # 终止所有进程
+larkcc -r                       # 重启当前 profile
+larkcc -r -p mybot              # 重启指定 profile
+larkcc -r --all                 # 重启所有进程
+larkcc -r --all -c              # 重启所有进程（强制 continue 模式）
+larkcc -r --all -f              # 重启所有进程（跳过确认）
 ```
 
 ## 群聊支持
@@ -643,6 +648,11 @@ larkcc -p mybot --reset-session # Clear mybot session
 larkcc --ps                     # View running larkcc processes
 larkcc --kill <profile|pid>     # Kill a specific process
 larkcc --kill-all               # Kill all processes
+larkcc -r                       # Restart current profile
+larkcc -r -p mybot              # Restart specified profile
+larkcc -r --all                 # Restart all processes
+larkcc -r --all -c              # Restart all (force continue mode)
+larkcc -r --all -f              # Restart all (skip confirmation)
 ```
 
 ## Group Chat Support
