@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2025-03-25
+
+### Added
+
+- Custom EXEC commands support (`exec_commands` in config.yml)
+- EXEC security control with blacklist and confirmation (`exec_security` in config.yml)
+- Template syntax for EXEC commands: `{{param}}` and `{{param|default}}`
+
+### Changed
+
+- Refactor slash commands: PROMPT commands now loaded from `default-prompts.yml`
+- User can now override built-in PROMPT commands via `commands` in config.yml
+- Add confirmation mechanism for dangerous EXEC commands
+
 ## [0.1.7] - 2025-03-25
 
 ### Fixed

@@ -158,6 +158,72 @@ commands:
 - `{input}` - 用户输入的参数（推荐）
 - 不使用占位符时，参数会以 `补充信息：xxx` 形式附加
 
+### 自定义 EXEC 命令
+
+除了 PROMPT 命令，还可以定义直接执行的命令（不走 Claude）：
+
+```yaml
+# ~/.larkcc/config.yml
+exec_commands:
+  docker: "docker ps -a"
+  dc: "docker-compose {{args}}"
+  kp: "kubectl get pods -n {{namespace|default}}"
+  logs: "tail -n {{n|100}} {{file}}"
+```
+
+**模板语法：**
+- `{{args}}` - 所有参数
+- `{{param}}` - 按顺序取参数
+- `{{param|default}}` - 可选参数，有默认值
+
+**用法：**
+```
+/docker          → docker ps -a
+/dc up -d        → docker-compose up -d
+/kp production   → kubectl get pods -n production
+/logs 50 app.log → tail -n 50 app.log
+/logs app.log    → tail -n 100 app.log（使用默认值）
+```
+
+### EXEC 安全控制
+
+为防止误执行危险命令，支持安全检查：
+
+```yaml
+# ~/.larkcc/config.yml
+exec_security:
+  enabled: true
+  blacklist:
+    - "rm -rf"
+    - "rm -r"
+    - "sudo"
+    - "mkfs"
+    - "dd if="
+    - "> /dev/"
+    - "chmod 777"
+    - "chmod -R"
+    - "chown -R"
+    - "shutdown"
+    - "reboot"
+  confirm_on_warning: true
+```
+
+**说明：**
+- `enabled: true` - 启用安全检查（默认启用）
+- `blacklist` - 危险关键词列表
+- `confirm_on_warning: true` - 检测到危险命令时需用户确认
+
+**确认流程：**
+```
+你：/mycmd some dangerous command
+Bot: ⚠️ 危险命令检测
+     检测到危险关键词: rm -rf
+     命令：rm -rf /some/path
+     确认执行？回复 y 确认，回复 n 取消
+你：y
+Bot: ✅ 已执行
+```
+
 ## 任务控制
 
 ```
@@ -586,6 +652,44 @@ Send `/command` in Feishu for quick actions:
 | `/install` | Install dependencies |
 | `/run [script]` | Run npm script |
 | `/help` | View all commands |
+
+### Custom Commands
+
+```yaml
+# ~/.larkcc/config.yml
+commands:
+  deploy: "Deploy to test environment following standard process"
+  impl: "Implement the following directly without discussion:\n\n{input}"
+```
+
+### Custom EXEC Commands
+
+Define commands that execute directly (without Claude):
+
+```yaml
+# ~/.larkcc/config.yml
+exec_commands:
+  docker: "docker ps -a"
+  dc: "docker-compose {{args}}"
+  logs: "tail -n {{n|100}} {{file}}"
+```
+
+**Template syntax:**
+- `{{args}}` - All arguments
+- `{{param}}` - Parameter by position
+- `{{param|default}}` - Optional with default value
+
+### EXEC Security Control
+
+```yaml
+exec_security:
+  enabled: true
+  blacklist:
+    - "rm -rf"
+    - "sudo"
+    - "mkfs"
+  confirm_on_warning: true
+```
 
 ## Image Support
 

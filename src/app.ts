@@ -8,7 +8,7 @@ import { execSync } from "child_process";
 import { createLarkClient, createWSClient, sendText, downloadImage, downloadFile, DownloadedFile } from "./feishu.js";
 import { runAgent, ensureEnv, ImageInput } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
-import { parseCommand } from "./commands.js";
+import { parseCommand, CommandContext, runCmd } from "./commands.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
 import * as multifile from "./multifile.js";
@@ -17,6 +17,10 @@ const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json")
 const LOCK_DIR = path.join(os.homedir(), ".larkcc");
 
 interface LockData { pid: number; cwd: string; startedAt: string; continue: boolean; }
+
+// 待确认的 EXEC 命令
+interface PendingExec { cmd: string; cwd: string; timestamp: number; }
+const pendingExecConfirm = new Map<string, PendingExec>();
 
 function lockPath(profile?: string): string {
   return path.join(LOCK_DIR, profile ? `lock-${profile}.json` : "lock-default.json");
@@ -252,7 +256,13 @@ export async function startApp(
 ): Promise<void> {
   const { app_id, app_secret } = config.feishu;
   const getOwnerOpenId = () => config.feishu.owner_open_id;
-  const customCommands: Record<string, string> = (config as any).commands ?? {};
+
+  // 构建命令上下文
+  const commandContext: CommandContext = {
+    customCommands: (config as any).commands ?? {},
+    execCommands: (config as any).exec_commands ?? {},
+    execSecurity: (config as any).exec_security ?? { enabled: true, blacklist: [], confirm_on_warning: true },
+  };
 
   await checkLock(cwd, profile);
   writeLock(cwd, profile, continueSession);
@@ -487,6 +497,31 @@ export async function startApp(
           return;
         }
 
+        // ── EXEC 命令确认处理 ──────────────────────────────────────
+        const pendingExec = pendingExecConfirm.get(chatId);
+        if (pendingExec && Date.now() - pendingExec.timestamp < 5 * 60 * 1000) { // 5分钟超时
+          const reply = text.toLowerCase().trim();
+          if (reply === "y" || reply === "yes" || reply === "确认") {
+            pendingExecConfirm.delete(chatId);
+            logger.info(`User confirmed exec: ${pendingExec.cmd}`);
+            const output = runCmd(pendingExec.cmd, pendingExec.cwd);
+            await sendText(client, chatId, `✅ 已执行\n\`\`\`\n${output}\n\`\`\``);
+            return;
+          } else if (reply === "n" || reply === "no" || reply === "取消") {
+            pendingExecConfirm.delete(chatId);
+            await sendText(client, chatId, "❌ 已取消执行");
+            return;
+          }
+          // 其他回复继续正常处理
+        }
+
+        // 清理过期的待确认命令
+        for (const [key, value] of pendingExecConfirm.entries()) {
+          if (Date.now() - value.timestamp > 5 * 60 * 1000) {
+            pendingExecConfirm.delete(key);
+          }
+        }
+
         // ── Slash 命令拦截 ────────────────────────────────────
         if (text.startsWith("/")) {
           const cmdText = text.toLowerCase().trim();
@@ -505,7 +540,7 @@ export async function startApp(
             return;
           }
 
-          const result = parseCommand(text, cwd, customCommands);
+          const result = parseCommand(text, cwd, commandContext);
           if (result) {
             // 多文件模式命令处理
             if (result.type === "multifile_start") {
@@ -563,6 +598,16 @@ export async function startApp(
 
             if (result.type === "exec" || result.type === "help" || result.type === "unknown") {
               await sendText(client, chatId, result.output ?? "");
+              return;
+            }
+
+            // EXEC 确认机制
+            if (result.type === "exec_confirm" && result.cmd) {
+              const warningMsg = `⚠️ 危险命令检测\n\n${result.output}\n\n命令：\n\`\`\`\n${result.cmd}\n\`\`\`\n\n确认执行？回复 y 确认，回复 n 取消`;
+              await sendText(client, chatId, warningMsg);
+
+              // 保存待确认的命令
+              pendingExecConfirm.set(chatId, { cmd: result.cmd, cwd, timestamp: Date.now() });
               return;
             }
             if (result.type === "prompt" && result.prompt) {

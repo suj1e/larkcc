@@ -1,6 +1,6 @@
 {
   "name": "larkcc",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Claude Code in Feishu/Lark - AI coding assistant bot",
   "author": "sujie <13156660820@163.com>",
   "license": "MIT",
@@ -40,7 +40,7 @@
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/commands && cp src/commands/default-prompts.yml dist/commands/",
     "start": "node dist/index.js"
   },
   "dependencies": {

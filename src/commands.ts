@@ -1,6 +1,28 @@
 import { execSync } from "child_process";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import yaml from "js-yaml";
 import { logger } from "./logger.js";
+import type { ExecSecurity } from "./config.js";
+
+// 获取当前文件目录
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 加载内置 PROMPT 默认值
+function loadDefaultPrompts(): Record<string, string> {
+  const ymlPath = path.join(__dirname, "commands", "default-prompts.yml");
+  try {
+    const content = fs.readFileSync(ymlPath, "utf8");
+    return yaml.load(content) as Record<string, string>;
+  } catch {
+    logger.warn("Failed to load default-prompts.yml");
+    return {};
+  }
+}
+
+const DEFAULT_PROMPTS = loadDefaultPrompts();
 
 function detectPkgManager(cwd: string): string {
   if (fs.existsSync(`${cwd}/pnpm-lock.yaml`)) return "pnpm";
@@ -9,7 +31,7 @@ function detectPkgManager(cwd: string): string {
   return "npm";
 }
 
-function runCmd(cmd: string, cwd: string): string {
+export function runCmd(cmd: string, cwd: string): string {
   try {
     return execSync(cmd, { cwd, encoding: "utf8", timeout: 30000 }).trim();
   } catch (e: any) {
@@ -32,38 +54,73 @@ export const BUILTIN_EXEC: Record<string, (cwd: string) => string> = {
   "ps":     (_)   => runCmd("ps aux | grep -v grep | head -20", process.cwd()),
 };
 
-// ── 内置 Claude prompt 快捷方式 ──────────────────────────────
+// ── 模板解析 ──────────────────────────────────────────────────
 
-export const BUILTIN_PROMPTS: Record<string, (args: string, cwd: string) => string> = {
-  "review":   (_, __)    => "帮我 review 最近的 git diff，关注安全性、性能、代码质量，给出具体改进建议",
-  "fix":      (_, __)    => "分析项目最近的报错日志或测试失败，找到根本原因并修复",
-  "doc":      (_, __)    => "为当前项目生成或更新 README，包括项目介绍、安装、使用方法",
-  "test":     (args, __) => args ? `为 ${args} 生成完整的单元测试` : "为最近修改的文件生成单元测试",
-  "explain":  (args, __) => args ? `详细解释 ${args} 的作用、逻辑和关键设计决策` : "解释当前项目的整体架构",
-  "refactor": (args, __) => args ? `重构 ${args}，提升可读性、性能和可维护性，保持功能不变` : "找出项目中最需要重构的部分并重构",
-  "commit":   (_, __)    => "分析当前 git diff，生成符合 Conventional Commits 规范的 commit message，直接输出，不要解释",
-  "pr":       (_, __)    => "基于当前分支的改动，生成详细的 PR 描述，包括改动说明、测试方案、注意事项",
-  "todo":     (_, __)    => "扫描项目里所有的 TODO、FIXME、HACK 注释，整理成优先级清单并给出建议",
-  "summary":  (_, __)    => "总结今天的代码改动，生成简洁的工作日报",
-  "bsx":      (args, __) => {
-    const prompt = "先不动代码，我们头脑风暴，深度讨论方案与规划，并给出你需要确认的。";
-    return args ? `${prompt}\n\n${args}` : prompt;
-  },
-  "upmd":     (_, __)    => "更新 README.md（如果存在，如果不存在就新增）和 CLAUDE.md（如果存在）。确保文档与代码保持同步，包括：功能描述、使用方法、配置说明等。",
-  "build":    (args, cwd) => {
-    const pm = detectPkgManager(cwd);
-    const cmd = pm === "cargo" ? "cargo build" : `${pm} run build`;
-    return args ? `运行构建命令：${args}` : `运行项目构建命令 \`${cmd}\`，如有报错帮我修复`;
-  },
-  "install":  (_, cwd)   => {
-    const pm = detectPkgManager(cwd);
-    return `运行 \`${pm} install\` 安装依赖，如有问题帮我解决`;
-  },
-  "run":      (args, cwd) => {
-    const pm = detectPkgManager(cwd);
-    return args ? `运行 \`${pm} run ${args}\`，如有报错帮我修复` : `列出 package.json 中可用的 scripts 并帮我选择`;
-  },
-};
+/**
+ * 解析模板参数
+ * 支持 {{param}} 和 {{param|default}} 语法
+ */
+export function parseTemplate(template: string, args: string): string {
+  const parts = args.split(/\s+/).filter(Boolean);
+
+  // 匹配所有 {{...}} 占位符
+  let result = template;
+  const placeholderRegex = /\{\{(\w+)(?:\|([^}]*))?\}\}/g;
+  let match;
+  let argIndex = 0;
+
+  while ((match = placeholderRegex.exec(template)) !== null) {
+    const [fullMatch, paramName, defaultValue] = match;
+    const hasDefault = defaultValue !== undefined;
+
+    // 特殊处理：args 表示所有剩余参数
+    if (paramName === "args") {
+      result = result.replace(fullMatch, args || defaultValue || "");
+      continue;
+    }
+
+    // 按顺序取参数
+    const value = parts[argIndex] || (hasDefault ? defaultValue : "");
+    if (parts[argIndex]) argIndex++;
+
+    result = result.replace(fullMatch, value);
+  }
+
+  return result;
+}
+
+// ── 安全检查 ──────────────────────────────────────────────────
+
+export interface SecurityCheckResult {
+  safe: boolean;
+  reason?: string;
+  needsConfirm?: boolean;
+}
+
+export function checkExecSecurity(
+  cmd: string,
+  security: ExecSecurity
+): SecurityCheckResult {
+  if (!security.enabled) {
+    return { safe: true };
+  }
+
+  const cmdLower = cmd.toLowerCase();
+
+  for (const keyword of security.blacklist) {
+    if (cmdLower.includes(keyword.toLowerCase())) {
+      return {
+        safe: !security.confirm_on_warning,
+        reason: `检测到危险关键词: ${keyword}`,
+        needsConfirm: security.confirm_on_warning,
+      };
+    }
+  }
+
+  return { safe: true };
+}
+
+// ── 命令处理 ──────────────────────────────────────────────────
 
 const HELP_TEXT = `可用命令：
 
@@ -101,15 +158,22 @@ const HELP_TEXT = `可用命令：
 // ── 主处理函数 ────────────────────────────────────────────────
 
 export interface CommandResult {
-  type: "exec" | "prompt" | "unknown" | "help" | "multifile_start" | "multifile_done";
+  type: "exec" | "prompt" | "unknown" | "help" | "multifile_start" | "multifile_done" | "exec_confirm";
   output?: string;
   prompt?: string;
+  cmd?: string;        // 待确认的命令（exec_confirm 时使用）
+}
+
+export interface CommandContext {
+  customCommands: Record<string, string>;      // 用户 PROMPT 命令
+  execCommands: Record<string, string>;        // 用户 EXEC 命令
+  execSecurity: ExecSecurity;                  // 安全配置
 }
 
 export function parseCommand(
   text: string,
   cwd: string,
-  customCommands: Record<string, string> = {}
+  context: CommandContext
 ): CommandResult | null {
   if (!text.startsWith("/")) return null;
 
@@ -136,22 +200,75 @@ export function parseCommand(
     }
   }
 
+  // 1. 内置 EXEC 命令（优先级最高，不可覆盖）
   if (BUILTIN_EXEC[cmd]) {
     logger.info(`Running /${cmd}...`);
     const output = BUILTIN_EXEC[cmd](cwd);
     return { type: "exec", output };
   }
 
-  if (BUILTIN_PROMPTS[cmd]) {
-    const prompt = BUILTIN_PROMPTS[cmd](args, cwd);
-    return { type: "prompt", prompt };
+  // 2. 用户自定义 EXEC 命令
+  if (context.execCommands[cmd]) {
+    const template = context.execCommands[cmd];
+    const resolvedCmd = parseTemplate(template, args);
+
+    // 安全检查
+    const securityResult = checkExecSecurity(resolvedCmd, context.execSecurity);
+
+    if (securityResult.needsConfirm) {
+      return {
+        type: "exec_confirm",
+        cmd: resolvedCmd,
+        output: securityResult.reason,
+      };
+    }
+
+    if (!securityResult.safe) {
+      return {
+        type: "unknown",
+        output: `❌ 命令被阻止: ${securityResult.reason}`,
+      };
+    }
+
+    logger.info(`Running custom exec /${cmd}: ${resolvedCmd}`);
+    const output = runCmd(resolvedCmd, cwd);
+    return { type: "exec", output };
   }
 
-  if (customCommands[cmd]) {
-    const template = customCommands[cmd];
+  // 3. 用户自定义 PROMPT 命令（覆盖内置）
+  if (context.customCommands[cmd]) {
+    const template = context.customCommands[cmd];
     const prompt = template.includes("{input}")
       ? template.replace("{input}", args || "")
       : (args ? `${template}\n补充信息：${args}` : template);
+    return { type: "prompt", prompt };
+  }
+
+  // 4. 内置 PROMPT 命令（从配置文件加载）
+  if (DEFAULT_PROMPTS[cmd]) {
+    let prompt = DEFAULT_PROMPTS[cmd];
+
+    // 处理带参数的命令
+    if (cmd === "test" || cmd === "explain" || cmd === "refactor") {
+      if (args) {
+        if (cmd === "test") prompt = `为 ${args} 生成完整的单元测试`;
+        if (cmd === "explain") prompt = `详细解释 ${args} 的作用、逻辑和关键设计决策`;
+        if (cmd === "refactor") prompt = `重构 ${args}，提升可读性、性能和可维护性，保持功能不变`;
+      }
+    } else if (cmd === "bsx") {
+      prompt = args ? `${prompt}\n\n${args}` : prompt;
+    } else if (cmd === "build") {
+      const pm = detectPkgManager(cwd);
+      const buildCmd = pm === "cargo" ? "cargo build" : `${pm} run build`;
+      prompt = args ? `运行构建命令：${args}` : `运行项目构建命令 \`${buildCmd}\`，如有报错帮我修复`;
+    } else if (cmd === "install") {
+      const pm = detectPkgManager(cwd);
+      prompt = `运行 \`${pm} install\` 安装依赖，如有问题帮我解决`;
+    } else if (cmd === "run") {
+      const pm = detectPkgManager(cwd);
+      prompt = args ? `运行 \`${pm} run ${args}\`，如有报错帮我修复` : `列出 package.json 中可用的 scripts 并帮我选择`;
+    }
+
     return { type: "prompt", prompt };
   }
 

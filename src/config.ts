@@ -34,6 +34,12 @@ export interface OverflowConfig {
   };
 }
 
+export interface ExecSecurity {
+  enabled: boolean;              // 是否启用安全检查
+  blacklist: string[];           // 黑名单关键词
+  confirm_on_warning: boolean;   // 检测到危险命令时是否需要确认
+}
+
 export interface ProfileConfig {
   feishu: FeishuConfig;
   claude: {
@@ -43,7 +49,9 @@ export interface ProfileConfig {
   overflow?: OverflowConfig;
   image_prompt?: string;  // 图片消息的默认提示词
   file?: Partial<FileConfig>;  // 文件处理配置
-  commands?: Record<string, string>;  // 自定义命令
+  commands?: Record<string, string>;  // 自定义 PROMPT 命令
+  exec_commands?: Record<string, string>;  // 自定义 EXEC 命令
+  exec_security?: ExecSecurity;  // EXEC 安全配置
 }
 
 export interface LarkccConfig extends ProfileConfig {}
@@ -54,7 +62,9 @@ export interface RawConfig {
   overflow?: OverflowConfig;
   image_prompt?: string;         // 图片消息的默认提示词
   file?: Partial<FileConfig>;    // 文件处理配置
-  commands?: Record<string, string>;  // 自定义命令
+  commands?: Record<string, string>;  // 自定义 PROMPT 命令
+  exec_commands?: Record<string, string>;  // 自定义 EXEC 命令
+  exec_security?: ExecSecurity;  // EXEC 安全配置
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
@@ -84,6 +94,24 @@ const DEFAULT_FILE_CONFIG: FileConfig = {
   prompt: "分析文件 {filename}（路径：{filepath}，大小：{size}，类型：{mime_type}）",
   multifile_prompt: "分析以下 {count} 个文件：\n{files}\n\n用户说明：{text}",
   multifile_timeout: 300,  // 5分钟
+};
+
+const DEFAULT_EXEC_SECURITY: ExecSecurity = {
+  enabled: true,
+  blacklist: [
+    "rm -rf",
+    "rm -r",
+    "sudo",
+    "mkfs",
+    "dd if=",
+    "> /dev/",
+    "chmod 777",
+    "chmod -R",
+    "chown -R",
+    "shutdown",
+    "reboot",
+  ],
+  confirm_on_warning: true,
 };
 
 function loadYml(filePath: string): any {
@@ -164,6 +192,12 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       multifile_timeout: file.multifile_timeout ?? DEFAULT_FILE_CONFIG.multifile_timeout,
     },
     commands: raw.commands,
+    exec_commands: raw.exec_commands,
+    exec_security: {
+      enabled: raw.exec_security?.enabled ?? DEFAULT_EXEC_SECURITY.enabled,
+      blacklist: raw.exec_security?.blacklist ?? DEFAULT_EXEC_SECURITY.blacklist,
+      confirm_on_warning: raw.exec_security?.confirm_on_warning ?? DEFAULT_EXEC_SECURITY.confirm_on_warning,
+    },
   };
 }
 
