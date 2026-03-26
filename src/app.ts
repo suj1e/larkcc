@@ -450,7 +450,7 @@ export async function startApp(
               // 添加 reaction 确认
               await client.im.messageReaction.create({
                 path: { message_id: msg.message_id },
-                data: { reaction_type: { emoji_type: config.reaction?.processing ?? "OK" } },
+                data: { reaction_type: { emoji_type: config.reaction?.processing ?? "Typing" } },
               }).catch(() => {});
               logger.dim(`[multifile] cached file ${count}: ${fileName}`);
             } else {
