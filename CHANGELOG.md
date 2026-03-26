@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-26
+
+### Added
+
+- Configurable reaction emoji types (`reaction.processing`, `reaction.done`, `reaction.error`)
+- Random thinking words for tool card status (40 default phrases like "💭 思考中...", "🔍 分析中...")
+- Configurable `thinking_words` list in config.yml
+
+### Changed
+
+- Default processing emoji changed from `OK` to `Typing` (keyboard typing animation)
+- Remove `--restart` command (unreliable, manual `--kill` + start is simpler)
+- Simplify README command section to common examples + `--help` pointer
+
 ## [0.1.10] - 2026-03-26
 
 ### Fixed
