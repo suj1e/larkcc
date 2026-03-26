@@ -423,6 +423,19 @@ file:
   multifile_prompt: "分析以下 {count} 个文件：\n{files}\n\n用户说明：{text}"
   multifile_timeout: 300                                     # 多文件模式超时（秒）
 
+# Reaction 表情配置
+reaction:
+  processing: Typing    # 处理中（默认 Typing 敲键盘）
+  done: DONE            # 完成
+  error: OnIt           # 出错
+
+# 思考状态词（随机显示）
+thinking_words:
+  - "💭 思考中..."
+  - "🔍 分析中..."
+  - "💻 编码中..."
+  # ... 更多状态词
+
 profiles:
   mybot:
     feishu:

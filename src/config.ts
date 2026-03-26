@@ -40,6 +40,12 @@ export interface ExecSecurity {
   confirm_on_warning: boolean;   // 检测到危险命令时是否需要确认
 }
 
+export interface ReactionConfig {
+  processing: string;  // 处理中的 emoji_type
+  done: string;        // 完成的 emoji_type
+  error: string;       // 出错的 emoji_type
+}
+
 export interface ProfileConfig {
   feishu: FeishuConfig;
   claude: {
@@ -54,7 +60,10 @@ export interface ProfileConfig {
   exec_security?: ExecSecurity;  // EXEC 安全配置
 }
 
-export interface LarkccConfig extends ProfileConfig {}
+export interface LarkccConfig extends ProfileConfig {
+  reaction?: ReactionConfig;
+  thinking_words?: string[];
+}
 
 export interface RawConfig {
   feishu: FeishuConfig;          // default profile
@@ -65,6 +74,8 @@ export interface RawConfig {
   commands?: Record<string, string>;  // 自定义 PROMPT 命令
   exec_commands?: Record<string, string>;  // 自定义 EXEC 命令
   exec_security?: ExecSecurity;  // EXEC 安全配置
+  reaction?: ReactionConfig;     // reaction emoji 配置
+  thinking_words?: string[];     // 思考状态词列表
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
@@ -113,6 +124,55 @@ const DEFAULT_EXEC_SECURITY: ExecSecurity = {
   ],
   confirm_on_warning: true,
 };
+
+const DEFAULT_REACTION: ReactionConfig = {
+  processing: "Typing",
+  done: "DONE",
+  error: "OnIt",
+};
+
+const DEFAULT_THINKING_WORDS: string[] = [
+  "💭 思考中...",
+  "🔍 分析中...",
+  "📚 查阅中...",
+  "✍️ 处理中...",
+  "🧠 构思中...",
+  "⚡ 计算中...",
+  "🔬 研究中...",
+  "📝 整理中...",
+  "🎯 规划中...",
+  "🔧 调试中...",
+  "📖 阅读中...",
+  "🌐 搜索中...",
+  "🧩 组合中...",
+  "🎨 设计中...",
+  "💡 灵感中...",
+  "🚀 启动中...",
+  "🔄 更新中...",
+  "📊 分析中...",
+  "🛠️ 构建中...",
+  "🧪 测试中...",
+  "📦 打包中...",
+  "⚡ 执行中...",
+  "🔄 同步中...",
+  "📥 获取中...",
+  "📤 推送中...",
+  "🔗 连接中...",
+  "🧹 清理中...",
+  "🎪 准备中...",
+  "🎲 随机中...",
+  "⏳ 进行中...",
+  "💻 编码中...",
+  "🌲 分叉中...",
+  "🌿 合并中...",
+  "📝 提交中...",
+  "🔍 审查中...",
+  "🐛 除错中...",
+  "✨ 优化中...",
+  "🔧 重构中...",
+  "📋 解析中...",
+  "🧬 解构中...",
+];
 
 function loadYml(filePath: string): any {
   if (!fs.existsSync(filePath)) return null;
@@ -198,6 +258,12 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       blacklist: raw.exec_security?.blacklist ?? DEFAULT_EXEC_SECURITY.blacklist,
       confirm_on_warning: raw.exec_security?.confirm_on_warning ?? DEFAULT_EXEC_SECURITY.confirm_on_warning,
     },
+    reaction: {
+      processing: raw.reaction?.processing ?? DEFAULT_REACTION.processing,
+      done: raw.reaction?.done ?? DEFAULT_REACTION.done,
+      error: raw.reaction?.error ?? DEFAULT_REACTION.error,
+    },
+    thinking_words: raw.thinking_words ?? DEFAULT_THINKING_WORDS,
   };
 }
 
@@ -244,6 +310,16 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   if (!raw.overflow.document?.cleanup) {
     raw.overflow.document = raw.overflow.document || {};
     raw.overflow.document.cleanup = DEFAULT_OVERFLOW.document.cleanup;
+  }
+
+  // 添加默认 reaction 配置（首次创建时）
+  if (!raw.reaction) {
+    raw.reaction = DEFAULT_REACTION;
+  }
+
+  // 添加默认 thinking_words 配置（首次创建时）
+  if (!raw.thinking_words) {
+    raw.thinking_words = DEFAULT_THINKING_WORDS;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");

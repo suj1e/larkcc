@@ -450,7 +450,7 @@ export async function startApp(
               // 添加 reaction 确认
               await client.im.messageReaction.create({
                 path: { message_id: msg.message_id },
-                data: { reaction_type: { emoji_type: "OK" } },
+                data: { reaction_type: { emoji_type: config.reaction?.processing ?? "OK" } },
               }).catch(() => {});
               logger.dim(`[multifile] cached file ${count}: ${fileName}`);
             } else {
@@ -491,7 +491,7 @@ export async function startApp(
           const count = multifile.getItemCount(profileKey, chatId);
           await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "OK" } },
+            data: { reaction_type: { emoji_type: config.reaction?.processing ?? "OK" } },
           }).catch(() => {});
           logger.dim(`[multifile] cached text ${count}: ${text.slice(0, 50)}...`);
           return;
@@ -641,7 +641,7 @@ export async function startApp(
         try {
           const reactionRes = await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "OK" } },
+            data: { reaction_type: { emoji_type: config.reaction?.processing ?? "Typing" } },
           });
           reactionId = reactionRes.data?.reaction_id;
         } catch {}
@@ -673,7 +673,7 @@ export async function startApp(
           }
           await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "DONE" } },
+            data: { reaction_type: { emoji_type: config.reaction?.done ?? "DONE" } },
           }).catch(() => {});
         } catch (err) {
           logger.error(`Agent error: ${String(err)}`);
@@ -685,7 +685,7 @@ export async function startApp(
           }
           await client.im.messageReaction.create({
             path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: "OnIt" } },
+            data: { reaction_type: { emoji_type: config.reaction?.error ?? "OnIt" } },
           }).catch(() => {});
         } finally {
           processing = false;

@@ -151,7 +151,7 @@ export async function runAgent(
           }
           const detail = formatInput(block.name, block.input ?? {});
           logger.tool(block.name, detail);
-          const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running");
+          const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running", config.thinking_words);
           toolMsgMap.set(block.id, { msgId, label, detail });
         }
       }

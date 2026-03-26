@@ -292,8 +292,21 @@ export async function sendToolCard(
   label: string,
   detail: string,
   status: "running" | "done" | "error" = "running",
+  thinkingWords?: string[],
 ): Promise<string> {
-  const statusIcon = status === "running" ? "⏳ 进行中..." : status === "done" ? "✅ 完成" : "❌ 失败";
+  let statusIcon: string;
+  if (status === "running") {
+    // 随机选择一个状态词
+    if (thinkingWords && thinkingWords.length > 0) {
+      statusIcon = thinkingWords[Math.floor(Math.random() * thinkingWords.length)];
+    } else {
+      statusIcon = "⏳ 进行中...";
+    }
+  } else if (status === "done") {
+    statusIcon = "✅ 完成";
+  } else {
+    statusIcon = "❌ 失败";
+  }
   const content = `${label}\n\`${detail}\`\n${statusIcon}`;
   const card = buildMarkdownCard(content);
   const res = await (client.im.message as any).reply({
