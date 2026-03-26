@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-26
+
+### Added
+
+- `/sync` command for one-command add-commit-push workflow
+  - `/sync` auto-generates commit message from diff
+  - `/sync <msg>` uses provided message
+
+### Changed
+
+- Simplify install.sh usage hints (add `--setup`, reduce to 8 lines)
+
+### Fixed
+
+- Unify reaction default value from "OK" to "Typing" in app.ts
+- Simplify sendToolCard status logic with object lookup
+- Remove duplicate emojis in DEFAULT_THINKING_WORDS
+
 ## [0.2.0] - 2026-03-26
 
 ### Added
