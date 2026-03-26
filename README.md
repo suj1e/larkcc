@@ -38,32 +38,13 @@ larkcc
 ## 命令
 
 ```bash
-# 启动
-larkcc                          # 默认机器人，新会话
-larkcc --continue               # 默认机器人，续接上次会话
-larkcc -p mybot                 # 用 mybot 机器人
-larkcc -p mybot --continue      # 用 mybot 机器人，续接上次会话
-larkcc -d                       # 后台运行
-
-# 配置
-larkcc --setup                  # 配置/更新默认机器人
-larkcc --setup -p mybot         # 配置/更新 mybot 机器人
-larkcc --new-profile            # 新增机器人
-larkcc --list-profiles          # 查看所有已配置的机器人
-
-# Session 管理
-larkcc --reset-session          # 清除默认机器人的 session
-larkcc -p mybot --reset-session # 清除 mybot 机器人的 session
-
-# 进程管理
-larkcc --ps                     # 查看运行中的 larkcc 进程
-larkcc --kill <profile|pid>     # 终止指定进程
-larkcc --kill-all               # 终止所有进程
-larkcc -r                       # 重启当前 profile
-larkcc -r -p mybot              # 重启指定 profile
-larkcc -r --all                 # 重启所有进程
-larkcc -r --all -c              # 重启所有进程（强制 continue 模式）
-larkcc -r --all -f              # 重启所有进程（跳过确认）
+# 常用
+larkcc                     # 启动（默认机器人，新会话）
+larkcc -c                  # 继续上次会话
+larkcc -p mybot            # 使用指定 profile
+larkcc -d                  # 后台运行
+larkcc --setup             # 配置机器人
+larkcc --help              # 查看所有命令
 ```
 
 ## 群聊支持
@@ -627,32 +608,13 @@ larkcc
 ## Commands
 
 ```bash
-# Start
-larkcc                          # Default bot, new session
-larkcc --continue               # Default bot, continue last session
-larkcc -p mybot                 # Use mybot profile
-larkcc -p mybot --continue      # Use mybot profile, continue last session
-larkcc -d                       # Run in background
-
-# Configuration
-larkcc --setup                  # Configure/update default bot
-larkcc --setup -p mybot         # Configure/update mybot profile
-larkcc --new-profile            # Add new bot profile
-larkcc --list-profiles          # List all configured bots
-
-# Session management
-larkcc --reset-session          # Clear default bot session
-larkcc -p mybot --reset-session # Clear mybot session
-
-# Process management
-larkcc --ps                     # View running larkcc processes
-larkcc --kill <profile|pid>     # Kill a specific process
-larkcc --kill-all               # Kill all processes
-larkcc -r                       # Restart current profile
-larkcc -r -p mybot              # Restart specified profile
-larkcc -r --all                 # Restart all processes
-larkcc -r --all -c              # Restart all (force continue mode)
-larkcc -r --all -f              # Restart all (skip confirmation)
+# Common
+larkcc                     # Start (default bot, new session)
+larkcc -c                  # Continue last session
+larkcc -p mybot            # Use specified profile
+larkcc -d                  # Run in background
+larkcc --setup             # Configure bot
+larkcc --help              # View all commands
 ```
 
 ## Group Chat Support
