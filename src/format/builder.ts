@@ -1,23 +1,45 @@
 /**
  * 飞书文档块构建器
+ *
+ * 所有数据结构严格对齐 @larksuiteoapi/node-sdk 类型定义
  */
 
-import { BlockType, CalloutColors, LanguageMap, CalloutType, ColorNameMap, AlignType } from "./constants.js";
+import {
+  BlockType, CalloutColorMap, CalloutType, LanguageMap,
+  FontColorNameMap, FontBgColorNameMap, FontColor, FontBgColor,
+} from "./constants.js";
 
 // ── 类型定义 ───────────────────────────────────────────────────
 
-export interface TextElement {
-  text_run?: { content: string };
-  link?: { text_run: { content: string }; href: string };
+/**
+ * text_element_style（对齐 SDK）
+ * 样式属性嵌套在 text_run 内部
+ */
+export interface TextElementStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
-  inline_code?: { content: string };
-  text_color?: string;
-  background_color?: string;
+  inline_code?: boolean;
+  text_color?: number;
+  background_color?: number;
+  link?: { url: string };
 }
 
+/**
+ * TextElement（对齐 SDK）
+ * 只有一个可选的 text_run 属性，样式在 text_run.text_element_style 内
+ */
+export interface TextElement {
+  text_run?: {
+    content: string;
+    text_element_style?: TextElementStyle;
+  };
+}
+
+/**
+ * 普通文档块（用于 children API 直接写入）
+ */
 export interface Block {
   block_type: number;
   text?: { elements: TextElement[] };
@@ -34,99 +56,233 @@ export interface Block {
   ordered?: { elements: TextElement[] };
   code?: { style: { language: number; wrap: boolean }; elements: TextElement[] };
   quote?: { elements: TextElement[] };
-  todo?: { style: { checked: boolean }; elements: TextElement[] };
-  equation?: { content: string };
-  callout?: { style: { background_color: string }; elements: TextElement[] };
+  todo?: { style: { done?: boolean }; elements: TextElement[] };
+  equation?: { elements: Array<{ equation: { content: string } }> };
   divider?: {};
-  table?: {
-    property: { row_size: number; column_size: number; column_width: number[] };
-    cells: Block[];
-  };
 }
 
-// ── 内联格式解析 ───────────────────────────────────────────────────
+// ── Descendants API 类型（用于表格、高亮块） ────────────────────────
 
 /**
- * 解析颜色值
- * 支持颜色名称（red）和十六进制（#FF0000）
+ * 高亮块 Descendants 结构
+ * callout 是容器块，内容通过子块实现
  */
-function parseColorValue(value: string): string | null {
-  const trimmed = value.trim().toLowerCase();
-  // 十六进制颜色
-  if (trimmed.startsWith("#")) {
-    const hex = trimmed.toUpperCase();
-    if (/^#[0-9A-F]{6}$/i.test(hex) || /^#[0-9A-F]{3}$/i.test(hex)) {
-      return hex;
-    }
-    // 扩展 3 位十六进制到 6 位
-    if (/^#[0-9A-F]{3}$/i.test(hex)) {
-      return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`.toUpperCase();
-    }
-    return hex;
+export interface CalloutDescendants {
+  calloutBlock: {
+    block_type: 19;
+    block_id: string;
+    children: string[];
+    callout: {
+      background_color: number;
+      border_color: number;
+    };
+  };
+  contentDescendants: Array<{
+    block_type: 2;
+    block_id: string;
+    text: { elements: TextElement[] };
+  }>;
+}
+
+/**
+ * 表格 Descendants 结构
+ * table.cells 是 block ID 引用，table_cell 是空壳容器，内容通过子块实现
+ */
+export interface TableDescendants {
+  tableBlock: {
+    block_type: 31;
+    block_id: string;
+    children: string[];
+    table: {
+      property: {
+        row_size: number;
+        column_size: number;
+        column_width: number[];
+        merge_info?: Array<{ row_span?: number; col_span?: number }>;
+      };
+      cells: string[];
+    };
+  };
+  cellDescendants: Array<
+    | { block_type: 32; block_id: string; children: string[]; table_cell: {} }
+    | { block_type: 2; block_id: string; text: { elements: TextElement[] } }
+  >;
+}
+
+/**
+ * 文档块统一条目
+ * 保持原始顺序，区分简单块和需要 Descendants API 的复杂块
+ */
+export type DocumentBlockItem =
+  | { type: "simple"; block: Block }
+  | { type: "table"; data: TableDescendants }
+  | { type: "callout"; data: CalloutDescendants };
+
+// ── 颜色映射 ───────────────────────────────────────────────────
+
+/**
+ * RGB 转 HSL 色相值（0-360）
+ */
+function rgbToHue(r: number, g: number, b: number): number {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+
+  if (max === min) return 0; // 灰色，无色相
+
+  const d = max - min;
+  let h: number;
+  if (max === r) {
+    h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  } else if (max === g) {
+    h = ((b - r) / d + 2) / 6;
+  } else {
+    h = ((r - g) / d + 4) / 6;
   }
-  // 颜色名称
-  return ColorNameMap[trimmed] || null;
+  return h * 360;
+}
+
+/**
+ * 将 Hex 颜色值近似匹配到飞书 FontColor 枚举
+ * 通过 HSL 色相区间分配到最近的 7 种颜色
+ */
+function hexToFontColor(hex: string): number {
+  try {
+    let h = hex.replace("#", "");
+    // 扩展 3 位 hex 到 6 位
+    if (h.length === 3) h = `${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+    if (h.length !== 6) return FontColor.GRAY;
+
+    const r = parseInt(h.slice(0, 2), 16) / 255;
+    const g = parseInt(h.slice(2, 4), 16) / 255;
+    const b = parseInt(h.slice(4, 6), 16) / 255;
+    const hue = rgbToHue(r, g, b);
+
+    // 检查是否接近灰色（低饱和度）
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const saturation = max === 0 ? 0 : (max - min) / (1 - Math.abs(2 * ((max + min) / 2) - 1));
+    if (saturation < 0.15) return FontColor.GRAY;
+
+    // 按色相区间分配
+    if (hue < 15 || hue >= 345) return FontColor.PINK;   // Pink/Red
+    if (hue < 45)  return FontColor.ORANGE;               // Orange
+    if (hue < 75)  return FontColor.YELLOW;               // Yellow
+    if (hue < 165) return FontColor.GREEN;                // Green
+    if (hue < 255) return FontColor.BLUE;                 // Blue
+    if (hue < 285) return FontColor.PURPLE;               // Purple
+    return FontColor.GRAY;
+  } catch {
+    return FontColor.GRAY;
+  }
+}
+
+/**
+ * 将 Hex 颜色值近似匹配到飞书 FontBgColor 枚举
+ * 通过明度区分 light (1-7) 和 dark (8-14) 变体
+ */
+function hexToFontBgColor(hex: string): number {
+  try {
+    let h = hex.replace("#", "");
+    if (h.length === 3) h = `${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+    if (h.length !== 6) return FontBgColor.LIGHT_GRAY;
+
+    const r = parseInt(h.slice(0, 2), 16) / 255;
+    const g = parseInt(h.slice(2, 4), 16) / 255;
+    const b = parseInt(h.slice(4, 6), 16) / 255;
+
+    const hue = rgbToHue(r, g, b);
+    const lightness = (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+    const isDark = lightness < 0.5;
+
+    // 按色相 + 明度分配
+    if (hue < 15 || hue >= 345) return isDark ? FontBgColor.DARK_PINK : FontBgColor.LIGHT_PINK;
+    if (hue < 45)  return isDark ? FontBgColor.DARK_ORANGE : FontBgColor.LIGHT_ORANGE;
+    if (hue < 75)  return isDark ? FontBgColor.DARK_YELLOW : FontBgColor.LIGHT_YELLOW;
+    if (hue < 165) return isDark ? FontBgColor.DARK_GREEN : FontBgColor.LIGHT_GREEN;
+    if (hue < 255) return isDark ? FontBgColor.DARK_BLUE : FontBgColor.LIGHT_BLUE;
+    if (hue < 285) return isDark ? FontBgColor.DARK_PURPLE : FontBgColor.LIGHT_PURPLE;
+    return isDark ? FontBgColor.DARK_GRAY : FontBgColor.LIGHT_GRAY;
+  } catch {
+    return FontBgColor.LIGHT_GRAY;
+  }
+}
+
+/**
+ * 解析 CSS 颜色值为飞书 FontColor 数字枚举
+ * 支持颜色名（red）和 Hex（#FF0000）
+ */
+function parseCssToFontColor(value: string): number | undefined {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.startsWith("#")) {
+    return hexToFontColor(trimmed);
+  }
+  return FontColorNameMap[trimmed];
+}
+
+/**
+ * 解析 CSS 颜色值为飞书 FontBgColor 数字枚举
+ * 支持颜色名（lightgreen）和 Hex（#90EE90）
+ */
+function parseCssToFontBgColor(value: string): number | undefined {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.startsWith("#")) {
+    return hexToFontBgColor(trimmed);
+  }
+  return FontBgColorNameMap[trimmed];
 }
 
 /**
  * 解析 style 属性中的颜色
  * 支持：color:red, background-color:yellow, color:#FF0000
+ * 返回飞书数字枚举值
  */
-function parseStyleColors(style: string): { textColor?: string; bgColor?: string } {
-  const result: { textColor?: string; bgColor?: string } = {};
+function parseStyleColors(style: string): { textColor?: number; bgColor?: number } {
+  const result: { textColor?: number; bgColor?: number } = {};
 
-  // 匹配 color 和 background-color
   const colorMatch = style.match(/color\s*:\s*([^;]+)/i);
   const bgColorMatch = style.match(/background-color\s*:\s*([^;]+)/i);
 
   if (colorMatch) {
-    const color = parseColorValue(colorMatch[1]);
+    const color = parseCssToFontColor(colorMatch[1]);
     if (color) result.textColor = color;
-    else console.warn(`⚠️ [format] 无效颜色值: "${colorMatch[1]}"，已忽略`);
+    else console.warn(`⚠️ [format] 无法映射颜色值: "${colorMatch[1]}"`);
   }
 
   if (bgColorMatch) {
-    const color = parseColorValue(bgColorMatch[1]);
+    const color = parseCssToFontBgColor(bgColorMatch[1]);
     if (color) result.bgColor = color;
-    else console.warn(`⚠️ [format] 无效背景色值: "${bgColorMatch[1]}"，已忽略`);
+    else console.warn(`⚠️ [format] 无法映射背景色值: "${bgColorMatch[1]}"`);
   }
 
   return result;
 }
 
+// ── 内联格式解析 ───────────────────────────────────────────────────
+
 /**
  * 解析内联 Markdown 和 HTML 格式
- * 支持：
- * - **bold**、*italic*、`code`、[link](url)、~~strikethrough~~
- * - <u>underline</u>
- * - <span style="color:red">colored text</span>
- * - <span style="background-color:yellow">highlighted text</span>
- * - \ 转义
+ *
+ * 输出严格对齐飞书 SDK 的 TextElement 结构：
+ * - 所有样式属性放在 text_run.text_element_style 内
+ * - 链接通过 text_element_style.link 实现
+ * - 行内代码通过 text_element_style.inline_code 布尔值实现
+ * - 颜色为数字枚举值
  */
 export function parseInlineText(text: string): TextElement[] {
   const elements: TextElement[] = [];
   let remaining = text;
 
-  // 处理转义后的文本
   const unescape = (s: string) => s.replace(/\\([<>*_~`\[\]])/g, "$1");
 
-  // 正则匹配各种内联格式
   const patterns = [
-    // 转义字符 \* \_ \< 等 - 先匹配，避免被其他规则捕获
     { regex: /\\([<>*_~`\[\]])/, type: "escape" },
-    // 下划线 <u>text</u>
     { regex: /<u>([^<]*)<\/u>/i, type: "underline" },
-    // 带颜色的 span <span style="color:red">text</span>
     { regex: /<span\s+style\s*=\s*["']([^"']+)["']\s*>([^<]*)<\/span>/i, type: "span" },
-    // 粗体 **text**
     { regex: /\*\*([^*]+)\*\*/, type: "bold" },
-    // 斜体 *text* 或 _text_
     { regex: /(?:\*([^*]+)\*|_([^_]+)_)/, type: "italic" },
-    // 行内代码 `code`
     { regex: /`([^`]+)`/, type: "code" },
-    // 删除线 ~~text~~
     { regex: /~~([^~]+)~~/, type: "strikethrough" },
-    // 链接 [text](url)
     { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: "link" },
   ];
 
@@ -143,29 +299,30 @@ export function parseInlineText(text: string): TextElement[] {
             element = { text_run: { content: match[1] } };
             break;
           case "underline":
-            element = { text_run: { content: unescape(match[1]) }, underline: true };
+            element = { text_run: { content: unescape(match[1]), text_element_style: { underline: true } } };
             break;
-          case "span":
+          case "span": {
             const colors = parseStyleColors(match[1]);
-            const content = unescape(match[2]);
-            element = { text_run: { content } };
-            if (colors.textColor) element.text_color = colors.textColor;
-            if (colors.bgColor) element.background_color = colors.bgColor;
+            const style: TextElementStyle = {};
+            if (colors.textColor) style.text_color = colors.textColor;
+            if (colors.bgColor) style.background_color = colors.bgColor;
+            element = { text_run: { content: unescape(match[2]), text_element_style: Object.keys(style).length > 0 ? style : undefined } };
             break;
+          }
           case "bold":
-            element = { text_run: { content: unescape(match[1]) }, bold: true };
+            element = { text_run: { content: unescape(match[1]), text_element_style: { bold: true } } };
             break;
           case "italic":
-            element = { text_run: { content: unescape(match[1] || match[2]) }, italic: true };
+            element = { text_run: { content: unescape(match[1] || match[2]), text_element_style: { italic: true } } };
             break;
           case "code":
-            element = { inline_code: { content: match[1] } };
+            element = { text_run: { content: unescape(match[1]), text_element_style: { inline_code: true } } };
             break;
           case "strikethrough":
-            element = { text_run: { content: unescape(match[1]) }, strikethrough: true };
+            element = { text_run: { content: unescape(match[1]), text_element_style: { strikethrough: true } } };
             break;
           case "link":
-            element = { link: { text_run: { content: unescape(match[1]) }, href: match[2] } };
+            element = { text_run: { content: unescape(match[1]), text_element_style: { link: { url: match[2] } } } };
             break;
           default:
             continue;
@@ -178,7 +335,6 @@ export function parseInlineText(text: string): TextElement[] {
       elements.push(earliestMatch.element);
       remaining = remaining.slice(earliestMatch.length);
     } else if (earliestMatch) {
-      // 匹配前有普通文本
       const plainText = remaining.slice(0, earliestMatch.index);
       if (plainText) {
         elements.push({ text_run: { content: unescape(plainText) } });
@@ -186,7 +342,6 @@ export function parseInlineText(text: string): TextElement[] {
       elements.push(earliestMatch.element);
       remaining = remaining.slice(earliestMatch.index + earliestMatch.length);
     } else {
-      // 没有匹配，全部作为普通文本
       if (remaining) {
         elements.push({ text_run: { content: unescape(remaining) } });
       }
@@ -212,7 +367,7 @@ export function buildHeadingBlock(level: number, content: string): Block {
     BlockType.HEADING4, BlockType.HEADING5, BlockType.HEADING6,
     BlockType.HEADING7, BlockType.HEADING8, BlockType.HEADING9,
   ];
-  const properties = ["heading1", "heading2", "heading3", "heading4", "heading5", "heading6", "heading7", "heading8", "heading9"];
+  const properties = ["heading1", "heading2", "heading3", "heading4", "heading5", "heading6", "heading7", "heading8", "heading9"] as const;
 
   const index = Math.min(level - 1, 8);
   return {
@@ -257,7 +412,7 @@ export function buildTodoBlock(content: string, checked: boolean): Block {
   return {
     block_type: BlockType.TODO,
     todo: {
-      style: { checked },
+      style: { done: checked },
       elements: parseInlineText(content),
     },
   };
@@ -266,18 +421,37 @@ export function buildTodoBlock(content: string, checked: boolean): Block {
 export function buildEquationBlock(latex: string): Block {
   return {
     block_type: BlockType.EQUATION,
-    equation: { content: latex },
+    equation: {
+      elements: [{ equation: { content: latex } }],
+    },
   };
 }
 
-export function buildCalloutBlock(type: CalloutType, content: string): Block {
-  const color = CalloutColors[type] || CalloutColors.NOTE;
+/**
+ * 构建高亮块（Descendants API）
+ * callout 是容器块，没有 elements，内容通过子块实现
+ */
+export function buildCalloutBlock(type: CalloutType, content: string): CalloutDescendants {
+  const { bg, border } = CalloutColorMap[type];
+  const calloutId = crypto.randomUUID();
+
+  // 内容按行拆分为多个 TEXT 子块
+  const lines = content.split("\n");
+  const textIds = lines.map((_, i) => `${calloutId}-text-${i}`);
+  const textBlocks = lines.map((line, i) => ({
+    block_type: BlockType.TEXT,
+    block_id: textIds[i],
+    text: { elements: parseInlineText(line) },
+  }));
+
   return {
-    block_type: BlockType.CALLOUT,
-    callout: {
-      style: { background_color: color },
-      elements: parseInlineText(content),
+    calloutBlock: {
+      block_type: BlockType.CALLOUT,
+      block_id: calloutId,
+      children: textIds,
+      callout: { background_color: bg, border_color: border },
     },
+    contentDescendants: textBlocks,
   };
 }
 
@@ -297,7 +471,6 @@ export interface CellMerge {
 
 export interface TableCell {
   content: string;
-  align?: "left" | "center" | "right";
   merge?: CellMerge;
 }
 
@@ -311,7 +484,6 @@ export interface TableData {
 function calculateTextWidth(text: string): number {
   let width = 0;
   for (const char of text) {
-    // CJK 字符范围
     if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(char)) {
       width += 2;
     } else {
@@ -322,73 +494,75 @@ function calculateTextWidth(text: string): number {
 }
 
 /**
- * 构建表格单元格 Block
+ * 构建表格 Descendants 结构
+ *
+ * 表格创建流程：
+ * 1. table.cells 是 string[]（block ID 引用），不是 Block 对象
+ * 2. table_cell 是空壳容器 {}，内容通过子块实现
+ * 3. 使用 Descendants API 一次性创建表格 + 单元格 + 单元格内容
  */
-function buildTableCell(cell: TableCell): Block {
-  const alignMap = {
-    left: AlignType.LEFT,
-    center: AlignType.CENTER,
-    right: AlignType.RIGHT,
-  };
-
-  const block: Block = {
-    block_type: BlockType.TABLE_CELL,
-    text: { elements: parseInlineText(cell.content.trim()) },
-  };
-
-  // 添加对齐属性
-  if (cell.align && cell.align !== "left") {
-    (block as any).property = { align: alignMap[cell.align] };
-  }
-
-  return block;
-}
-
-export function buildTableBlock(data: TableData): Block {
+export function buildTableBlock(data: TableData): TableDescendants {
   const { rows } = data;
+  const tableId = crypto.randomUUID();
+
   if (rows.length === 0 || rows[0].length === 0) {
     return {
-      block_type: BlockType.TABLE,
-      table: {
-        property: { row_size: 0, column_size: 0, column_width: [] },
-        cells: [],
+      tableBlock: {
+        block_type: BlockType.TABLE,
+        block_id: tableId,
+        children: [],
+        table: {
+          property: { row_size: 0, column_size: 0, column_width: [] },
+          cells: [],
+        },
       },
+      cellDescendants: [],
     };
   }
 
   const rowSize = rows.length;
   const columnSize = rows[0].length;
-
-  // 构建单元格和合并信息
-  const cells: Block[] = [];
-  const mergeInfo: Array<{ row_span: number; col_span: number; row_index: number; col_index: number }> = [];
+  const mergeInfo: Array<{ row_span: number; col_span: number }> = [];
 
   // 追踪被合并的单元格位置
   const mergedCells = new Set<string>();
+
+  // 生成所有单元格的 descendants
+  const cellDescendants: TableDescendants["cellDescendants"] = [];
+  const cellIds: string[] = [];
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     for (let colIndex = 0; colIndex < rows[rowIndex].length; colIndex++) {
       const cell = rows[rowIndex][colIndex];
       const key = `${rowIndex}-${colIndex}`;
 
-      // 跳过被合并的单元格
-      if (mergedCells.has(key)) continue;
+      // 跳过被合并的单元格（仍然占位在 cells[] 中）
+      if (mergedCells.has(key)) {
+        cellIds.push(`${tableId}-cell-${rowIndex}-${colIndex}`);
+        // 被合并的单元格仍然需要创建 table_cell（占位）
+        cellDescendants.push({
+          block_type: BlockType.TABLE_CELL,
+          block_id: `${tableId}-cell-${rowIndex}-${colIndex}`,
+          children: [],
+          table_cell: {},
+        });
+        continue;
+      }
+
+      const cellId = `${tableId}-cell-${rowIndex}-${colIndex}`;
+      const textId = `${cellId}-txt`;
+      cellIds.push(cellId);
 
       // 处理合并
       if (cell.merge && (cell.merge.colspan > 1 || cell.merge.rowspan > 1)) {
-        const colspan = cell.merge.colspan || 1;
-        const rowspan = cell.merge.rowspan || 1;
-
         mergeInfo.push({
-          row_span: rowspan,
-          col_span: colspan,
-          row_index: rowIndex,
-          col_index: colIndex,
+          row_span: cell.merge.rowspan || 1,
+          col_span: cell.merge.colspan || 1,
         });
 
         // 标记被合并的单元格
-        for (let r = rowIndex; r < rowIndex + rowspan && r < rows.length; r++) {
-          for (let c = colIndex; c < colIndex + colspan && c < rows[r].length; c++) {
+        for (let r = rowIndex; r < rowIndex + (cell.merge.rowspan || 1) && r < rows.length; r++) {
+          for (let c = colIndex; c < colIndex + (cell.merge.colspan || 1) && c < rows[r].length; c++) {
             if (r !== rowIndex || c !== colIndex) {
               mergedCells.add(`${r}-${c}`);
             }
@@ -396,19 +570,31 @@ export function buildTableBlock(data: TableData): Block {
         }
       }
 
-      cells.push(buildTableCell(cell));
+      // table_cell 容器
+      cellDescendants.push({
+        block_type: BlockType.TABLE_CELL,
+        block_id: cellId,
+        children: [textId],
+        table_cell: {},
+      });
+
+      // 单元格文本内容
+      cellDescendants.push({
+        block_type: BlockType.TEXT,
+        block_id: textId,
+        text: { elements: parseInlineText(cell.content.trim()) },
+      });
     }
   }
 
   // 计算每列最大宽度
   const columnWidths: number[] = [];
   for (let colIndex = 0; colIndex < columnSize; colIndex++) {
-    let maxWidth = 50; // 最小宽度
+    let maxWidth = 50;
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
       if (colIndex < rows[rowIndex].length) {
         const cell = rows[rowIndex][colIndex];
         const width = calculateTextWidth(cell.content);
-        // 考虑合并单元格的宽度
         const colspan = cell.merge?.colspan || 1;
         if (colspan === 1) {
           maxWidth = Math.max(maxWidth, Math.min(width * 10 + 20, 300));
@@ -418,22 +604,21 @@ export function buildTableBlock(data: TableData): Block {
     columnWidths.push(maxWidth);
   }
 
-  const tableBlock: Block = {
-    block_type: BlockType.TABLE,
-    table: {
-      property: {
-        row_size: rowSize,
-        column_size: columnSize,
-        column_width: columnWidths,
+  return {
+    tableBlock: {
+      block_type: BlockType.TABLE,
+      block_id: tableId,
+      children: cellIds,
+      table: {
+        property: {
+          row_size: rowSize,
+          column_size: columnSize,
+          column_width: columnWidths,
+          ...(mergeInfo.length > 0 ? { merge_info: mergeInfo } : {}),
+        },
+        cells: cellIds,
       },
-      cells,
     },
+    cellDescendants,
   };
-
-  // 添加合并信息
-  if (mergeInfo.length > 0) {
-    (tableBlock.table as any).merge_info = mergeInfo;
-  }
-
-  return tableBlock;
 }

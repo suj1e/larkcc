@@ -3,7 +3,7 @@
  * 将 Markdown 转换为飞书文档块
  */
 
-import { Block } from "./builder.js";
+import { Block, DocumentBlockItem } from "./builder.js";
 import {
   buildTextBlock,
   buildHeadingBlock,
@@ -46,13 +46,15 @@ export interface DocumentMeta {
 
 /**
  * 将 Markdown 文本转换为飞书文档块
+ *
+ * 返回 DocumentBlockItem[] 保持原始顺序，区分简单块和需要 Descendants API 的复杂块
  */
 export function markdownToBlocks(
   markdown: string,
   originalMessage: string,
   meta: DocumentMeta
-): { blocks: Block[]; warnings: string[] } {
-  const blocks: Block[] = [];
+): { items: DocumentBlockItem[]; warnings: string[] } {
+  const items: DocumentBlockItem[] = [];
 
   // 1. 内容清理
   const { content: sanitizedMarkdown, warnings } = sanitizeContent(markdown);
@@ -71,7 +73,7 @@ export function markdownToBlocks(
     if (currentPara.length > 0) {
       const content = currentPara.join("\n").trim();
       if (content) {
-        blocks.push(buildTextBlock(content));
+        items.push({ type: "simple", block: buildTextBlock(content) });
       }
       currentPara = [];
     }
@@ -83,7 +85,7 @@ export function markdownToBlocks(
     // --- 代码块处理 ---
     if (inCodeBlock) {
       if (isCodeBlockEnd(line)) {
-        blocks.push(buildCodeBlock(codeContent.join("\n"), codeLang));
+        items.push({ type: "simple", block: buildCodeBlock(codeContent.join("\n"), codeLang) });
         inCodeBlock = false;
         codeContent = [];
         codeLang = "";
@@ -106,26 +108,26 @@ export function markdownToBlocks(
     const equationResult = parseBlockEquation(lines, i);
     if (equationResult) {
       flushPara();
-      blocks.push(buildEquationBlock(equationResult.result.latex));
+      items.push({ type: "simple", block: buildEquationBlock(equationResult.result.latex) });
       i = equationResult.endIndex;
       continue;
     }
 
-    // --- 高亮块 ---
+    // --- 高亮块（需要 Descendants API） ---
     const calloutResult = parseCallout(lines, i);
     if (calloutResult) {
       flushPara();
       const { type, content } = calloutResult.result;
-      blocks.push(buildCalloutBlock(type, content.join("\n")));
+      items.push({ type: "callout", data: buildCalloutBlock(type, content.join("\n")) });
       i = calloutResult.endIndex;
       continue;
     }
 
-    // --- 表格 ---
+    // --- 表格（需要 Descendants API） ---
     const tableResult = parseTable(lines, i);
     if (tableResult) {
       flushPara();
-      blocks.push(buildTableBlock(tableResult.data));
+      items.push({ type: "table", data: buildTableBlock(tableResult.data) });
       i = tableResult.endIndex;
       continue;
     }
@@ -134,7 +136,7 @@ export function markdownToBlocks(
     const todoResult = parseTodo(line);
     if (todoResult) {
       flushPara();
-      blocks.push(buildTodoBlock(todoResult.content, todoResult.checked));
+      items.push({ type: "simple", block: buildTodoBlock(todoResult.content, todoResult.checked) });
       continue;
     }
 
@@ -143,14 +145,14 @@ export function markdownToBlocks(
     if (headingLevel > 0) {
       flushPara();
       const content = line.slice(headingLevel + 1).trim();
-      blocks.push(buildHeadingBlock(headingLevel, content));
+      items.push({ type: "simple", block: buildHeadingBlock(headingLevel, content) });
       continue;
     }
 
     // --- 分割线 ---
     if (isDivider(line)) {
       flushPara();
-      blocks.push(buildDividerBlock());
+      items.push({ type: "simple", block: buildDividerBlock() });
       continue;
     }
 
@@ -158,9 +160,8 @@ export function markdownToBlocks(
     if (line.trim().startsWith("> ")) {
       flushPara();
       const quoteContent = line.trim().slice(2);
-      // 检查是否是高亮块语法（已在上面处理）
       if (!quoteContent.match(/^\[!\w+\]/)) {
-        blocks.push(buildQuoteBlock(quoteContent));
+        items.push({ type: "simple", block: buildQuoteBlock(quoteContent) });
       }
       continue;
     }
@@ -170,7 +171,7 @@ export function markdownToBlocks(
       flushPara();
       const match = line.match(/^(\s*)[-*]\s+(.+)$/);
       if (match) {
-        blocks.push(buildBulletBlock(match[2]));
+        items.push({ type: "simple", block: buildBulletBlock(match[2]) });
       }
       continue;
     }
@@ -180,7 +181,7 @@ export function markdownToBlocks(
       flushPara();
       const match = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
       if (match) {
-        blocks.push(buildOrderedBlock(match[3]));
+        items.push({ type: "simple", block: buildOrderedBlock(match[3]) });
       }
       continue;
     }
@@ -193,26 +194,29 @@ export function markdownToBlocks(
   flushPara();
 
   // 3. 添加元数据头部
-  const headerBlocks = buildDocumentHeader(originalMessage, meta);
+  const headerItems = buildDocumentHeader(originalMessage, meta);
 
-  return { blocks: [...headerBlocks, ...blocks], warnings };
+  return { items: [...headerItems, ...items], warnings };
 }
 
 // ── 文档头部构建 ───────────────────────────────────────────────────
 
-function buildDocumentHeader(originalMessage: string, meta: DocumentMeta): Block[] {
-  const blocks: Block[] = [];
+function buildDocumentHeader(originalMessage: string, meta: DocumentMeta): DocumentBlockItem[] {
+  const items: DocumentBlockItem[] = [];
 
   // 引用块显示用户原始消息
   if (originalMessage) {
-    blocks.push({
-      block_type: BlockType.QUOTE,
-      quote: { elements: parseInlineText(originalMessage) },
+    items.push({
+      type: "simple",
+      block: {
+        block_type: BlockType.QUOTE,
+        quote: { elements: parseInlineText(originalMessage) },
+      },
     });
   }
 
   // 分割线
-  blocks.push(buildDividerBlock());
+  items.push({ type: "simple", block: buildDividerBlock() });
 
   // 元数据（每行一个 text block，确保换行）
   const metaLines = [
@@ -222,14 +226,17 @@ function buildDocumentHeader(originalMessage: string, meta: DocumentMeta): Block
     `📅 时间: ${meta.datetime}`,
   ];
   for (const line of metaLines) {
-    blocks.push({
-      block_type: BlockType.TEXT,
-      text: { elements: [{ text_run: { content: line } }] },
+    items.push({
+      type: "simple",
+      block: {
+        block_type: BlockType.TEXT,
+        text: { elements: [{ text_run: { content: line } }] },
+      },
     });
   }
 
   // 分割线
-  blocks.push(buildDividerBlock());
+  items.push({ type: "simple", block: buildDividerBlock() });
 
-  return blocks;
+  return items;
 }

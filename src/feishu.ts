@@ -3,7 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { OverflowConfig, CardTableConfig } from "./config.js";
-import { sanitizeContent, formatWarnings, BlockType, LanguageMap, markdownToBlocks, DocumentMeta, countTables } from "./format/index.js";
+import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables } from "./format/index.js";
+import type { Block, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
 
@@ -643,6 +644,11 @@ async function safeJsonParse(res: Response, context: string): Promise<any> {
 
 /**
  * 创建云文档并写入内容（在应用云空间）
+ *
+ * 写入流程（严格保序）：
+ * - 简单块：分批通过 children API 写入
+ * - 表格/高亮块：通过 descendants API 写入
+ * - 保持原始文档顺序
  */
 export async function createOverflowDocument(
   token: string,
@@ -651,8 +657,8 @@ export async function createOverflowDocument(
   originalMessage: string,
   meta: DocumentMeta
 ): Promise<{ docUrl: string; docId: string }> {
-  // 1. 将 markdown 转换为文档块（同时过滤 blob URL）
-  const { blocks } = markdownToBlocks(markdown, originalMessage, meta);
+  // 1. 将 markdown 转换为文档块
+  const { items } = markdownToBlocks(markdown, originalMessage, meta);
 
   // 2. 创建文档（不指定 folder_token，创建在应用云空间）
   const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
@@ -670,35 +676,180 @@ export async function createOverflowDocument(
     throw new Error("Failed to create document");
   }
 
-  // 3. 写入内容到文档（分批写入，每批最多 50 个块）
+  // 3. 严格保序写入
   const BATCH_SIZE = 50;
-  for (let i = 0; i < blocks.length; i += BATCH_SIZE) {
-    const batch = blocks.slice(i, i + BATCH_SIZE);
-    // 第一批用 index: 0 插入开头，后续用 index: -1 追加到末尾
-    const index = i === 0 ? 0 : -1;
-    const updateRes = await fetch(`https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/children`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        children: batch,
-        index,
-      }),
-    });
+  let simpleBatch: Block[] = [];
+  let isFirstBatch = true;
+  let batchIndex = 0;
 
-    const updateData = await safeJsonParse(updateRes, "Write content") as { code?: number; msg?: string };
-    if (updateData.code !== 0) {
-      throw new Error(`Write content failed (${updateData.code}): ${updateData.msg}`);
+  const flushSimpleBatch = async () => {
+    if (simpleBatch.length === 0) return;
+    batchIndex++;
+    const index = isFirstBatch ? 0 : -1;
+    const batchTypes = simpleBatch.map(b => b.block_type);
+
+    try {
+      await batchCreateBlocks(token, docId, simpleBatch, index);
+      isFirstBatch = false;
+    } catch (error) {
+      console.error(`[DOC] Batch ${batchIndex} failed, block types: [${batchTypes.join(", ")}]`);
+      console.error(`[DOC] First block: ${JSON.stringify(simpleBatch[0], null, 2).slice(0, 500)}`);
+      throw error;
+    } finally {
+      simpleBatch = [];
+    }
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+
+    switch (item.type) {
+      case "simple":
+        simpleBatch.push(item.block);
+        if (simpleBatch.length >= BATCH_SIZE) {
+          await flushSimpleBatch();
+        }
+        break;
+
+      case "table":
+        await flushSimpleBatch();
+        try {
+          await createTableDescendants(token, docId, item.data);
+        } catch (error) {
+          console.error(`[DOC] Table descendants failed at item ${i}:`, error);
+          throw error;
+        }
+        break;
+
+      case "callout":
+        await flushSimpleBatch();
+        try {
+          await createCalloutDescendants(token, docId, item.data);
+        } catch (error) {
+          console.error(`[DOC] Callout descendants failed at item ${i}:`, error);
+          throw error;
+        }
+        break;
     }
   }
+
+  // 写入剩余的简单块
+  await flushSimpleBatch();
 
   // 返回文档链接和 ID
   return {
     docUrl: `https://feishu.cn/docx/${docId}`,
     docId,
   };
+}
+
+/**
+ * 批量创建文档块（children API）
+ */
+async function batchCreateBlocks(
+  token: string,
+  docId: string,
+  children: Block[],
+  index: number
+): Promise<void> {
+  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/children`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ children, index }),
+  });
+
+  const data = await safeJsonParse(res, "Batch create blocks") as {
+    code?: number;
+    msg?: string;
+    data?: { children?: Array<{ block_id?: string; block_type?: number }> };
+  };
+
+  if (data.code !== 0) {
+    console.error(`[DOC] API error response:`, JSON.stringify(data, null, 2));
+    throw new Error(`Write content failed (${data.code}): ${data.msg}`);
+  }
+}
+
+/**
+ * 通过 Descendants API 创建表格
+ * 一次性创建 table + table_cell + cell text blocks
+ */
+async function createTableDescendants(
+  token: string,
+  docId: string,
+  table: TableDescendants
+): Promise<void> {
+  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
+  const body = {
+    children_id: [docId],
+    descendants: [
+      table.tableBlock,
+      ...table.cellDescendants,
+    ],
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await safeJsonParse(res, "Create table descendants") as {
+    code?: number;
+    msg?: string;
+  };
+
+  if (data.code !== 0) {
+    console.error(`[DOC] Table API error response:`, JSON.stringify(data, null, 2));
+    console.error(`[DOC] Table payload (truncated):`, JSON.stringify(table.tableBlock, null, 2).slice(0, 500));
+    throw new Error(`Create table failed (${data.code}): ${data.msg}`);
+  }
+}
+
+/**
+ * 通过 Descendants API 创建高亮块
+ * 一次性创建 callout + content text blocks
+ */
+async function createCalloutDescendants(
+  token: string,
+  docId: string,
+  callout: CalloutDescendants
+): Promise<void> {
+  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
+  const body = {
+    children_id: [docId],
+    descendants: [
+      callout.calloutBlock,
+      ...callout.contentDescendants,
+    ],
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await safeJsonParse(res, "Create callout descendants") as {
+    code?: number;
+    msg?: string;
+  };
+
+  if (data.code !== 0) {
+    console.error(`[DOC] Callout API error response:`, JSON.stringify(data, null, 2));
+    console.error(`[DOC] Callout payload:`, JSON.stringify(callout.calloutBlock, null, 2).slice(0, 500));
+    throw new Error(`Create callout failed (${data.code}): ${data.msg}`);
+  }
 }
 
 /**

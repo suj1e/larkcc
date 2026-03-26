@@ -6,7 +6,8 @@
  * - 代码语言枚举: https://feishu.apifox.cn/doc-1950637
  */
 
-// 飞书文档块类型
+// ── 文档块类型 ───────────────────────────────────────────────────
+
 export const BlockType = {
   PAGE: 1,        // 页面
   TEXT: 2,        // 文本
@@ -40,20 +41,157 @@ export const BlockType = {
   TABLE_CELL: 32, // 表格单元格
 } as const;
 
-// 飞书高亮块颜色
-export const CalloutColors = {
-  NOTE: "blue",      // 提示
-  TIP: "green",      // 建议
-  WARNING: "orange", // 警告
-  DANGER: "red",     // 危险
-  CAUTION: "red",    // 注意（同 danger）
-  INFO: "blue",      // 信息（同 note）
+// ── 飞书颜色枚举 ───────────────────────────────────────────────────
+
+/**
+ * 文字颜色（text_element_style.text_color）
+ * 1=Pink, 2=Orange, 3=Yellow, 4=Green, 5=Blue, 6=Purple, 7=Gray
+ */
+export const FontColor = {
+  PINK: 1,
+  ORANGE: 2,
+  YELLOW: 3,
+  GREEN: 4,
+  BLUE: 5,
+  PURPLE: 6,
+  GRAY: 7,
 } as const;
 
-export type CalloutType = keyof typeof CalloutColors;
+/**
+ * 文字背景色（text_element_style.background_color）
+ * 1-7=Light 系列, 8-14=Dark 系列
+ */
+export const FontBgColor = {
+  LIGHT_PINK: 1,
+  LIGHT_ORANGE: 2,
+  LIGHT_YELLOW: 3,
+  LIGHT_GREEN: 4,
+  LIGHT_BLUE: 5,
+  LIGHT_PURPLE: 6,
+  LIGHT_GRAY: 7,
+  DARK_PINK: 8,
+  DARK_ORANGE: 9,
+  DARK_YELLOW: 10,
+  DARK_GREEN: 11,
+  DARK_BLUE: 12,
+  DARK_PURPLE: 13,
+  DARK_GRAY: 14,
+} as const;
 
-// 飞书官方语言ID对照表（CodeLanguage 枚举，ID范围1-75）
-// 参考：https://feishu.apifox.cn/doc-1950637
+/**
+ * 高亮块背景色（callout.background_color）
+ * 枚举值与 FontBgColor 相同
+ */
+export const CalloutBgColor = FontBgColor;
+
+/**
+ * 高亮块边框色（callout.border_color）
+ * 1=Red, 2=Orange, 3=Yellow, 4=Green, 5=Blue, 6=Purple, 7=Gray
+ */
+export const CalloutBorderColor = {
+  RED: 1,
+  ORANGE: 2,
+  YELLOW: 3,
+  GREEN: 4,
+  BLUE: 5,
+  PURPLE: 6,
+  GRAY: 7,
+} as const;
+
+// ── 高亮块颜色映射 ───────────────────────────────────────────────────
+
+export const CalloutColorMap: Record<CalloutType, { bg: number; border: number }> = {
+  NOTE:    { bg: CalloutBgColor.LIGHT_BLUE,   border: CalloutBorderColor.BLUE },
+  TIP:     { bg: CalloutBgColor.LIGHT_GREEN,  border: CalloutBorderColor.GREEN },
+  WARNING: { bg: CalloutBgColor.LIGHT_ORANGE, border: CalloutBorderColor.ORANGE },
+  DANGER:  { bg: CalloutBgColor.LIGHT_PINK,   border: CalloutBorderColor.RED },
+  CAUTION: { bg: CalloutBgColor.LIGHT_PINK,   border: CalloutBorderColor.RED },
+  INFO:    { bg: CalloutBgColor.LIGHT_BLUE,   border: CalloutBorderColor.BLUE },
+};
+
+export type CalloutType = "NOTE" | "TIP" | "WARNING" | "DANGER" | "CAUTION" | "INFO";
+
+// ── CSS 颜色名 → 飞书 FontColor 数字映射 ───────────────────────────────
+
+/**
+ * CSS 颜色名称到飞书 FontColor 枚举值的映射
+ * 飞书只有 7 种文字颜色，CSS 颜色名按色相家族分组
+ */
+export const FontColorNameMap: Record<string, number> = {
+  // Pink/Red 家族
+  pink: FontColor.PINK, red: FontColor.PINK, crimson: FontColor.PINK,
+  coral: FontColor.PINK, salmon: FontColor.PINK, tomato: FontColor.PINK,
+  maroon: FontColor.PINK, rosybrown: FontColor.PINK, indianred: FontColor.PINK,
+  firebrick: FontColor.PINK, darkred: FontColor.PINK,
+  // Orange 家族
+  orange: FontColor.ORANGE, gold: FontColor.ORANGE,
+  darkorange: FontColor.ORANGE, orangered: FontColor.ORANGE,
+  peru: FontColor.ORANGE, chocolate: FontColor.ORANGE, sienna: FontColor.ORANGE,
+  // Yellow 家族
+  yellow: FontColor.YELLOW, olive: FontColor.YELLOW, khaki: FontColor.YELLOW,
+  darkkhaki: FontColor.YELLOW, palegoldenrod: FontColor.YELLOW,
+  // Green 家族
+  green: FontColor.GREEN, teal: FontColor.GREEN, cyan: FontColor.GREEN,
+  aqua: FontColor.GREEN, lime: FontColor.GREEN, limegreen: FontColor.GREEN,
+  lightgreen: FontColor.GREEN, darkgreen: FontColor.GREEN, forestgreen: FontColor.GREEN,
+  seagreen: FontColor.GREEN, mediumseagreen: FontColor.GREEN, springgreen: FontColor.GREEN,
+  mintcream: FontColor.GREEN, mediumaquamarine: FontColor.GREEN, aquamarine: FontColor.GREEN,
+  // Blue 家族
+  blue: FontColor.BLUE, navy: FontColor.BLUE, skyblue: FontColor.BLUE,
+  lightblue: FontColor.BLUE, darkblue: FontColor.BLUE, royalblue: FontColor.BLUE,
+  steelblue: FontColor.BLUE, dodgerblue: FontColor.BLUE, cornflowerblue: FontColor.BLUE,
+  midnightblue: FontColor.BLUE, slateblue: FontColor.BLUE, mediumblue: FontColor.BLUE,
+  cadetblue: FontColor.BLUE, deepskyblue: FontColor.BLUE, powderblue: FontColor.BLUE,
+  lightsteelblue: FontColor.BLUE, lightcyan: FontColor.BLUE,
+  indigo: FontColor.BLUE,
+  // Purple 家族
+  purple: FontColor.PURPLE, violet: FontColor.PURPLE, magenta: FontColor.PURPLE,
+  fuchsia: FontColor.PURPLE, plum: FontColor.PURPLE, orchid: FontColor.PURPLE,
+  mediumorchid: FontColor.PURPLE, darkorchid: FontColor.PURPLE,
+  darkviolet: FontColor.PURPLE, blueviolet: FontColor.PURPLE,
+  darkmagenta: FontColor.PURPLE, mediumpurple: FontColor.PURPLE,
+  mediumslateblue: FontColor.PURPLE, slategray: FontColor.PURPLE,
+  // Gray 家族
+  gray: FontColor.GRAY, grey: FontColor.GRAY, silver: FontColor.GRAY,
+  white: FontColor.GRAY, black: FontColor.GRAY,
+  darkgray: FontColor.GRAY, darkgrey: FontColor.GRAY,
+  lightgray: FontColor.GRAY, lightgrey: FontColor.GRAY,
+  dimgray: FontColor.GRAY, dimgrey: FontColor.GRAY,
+  lightslategray: FontColor.GRAY,
+  gainsboro: FontColor.GRAY, whitesmoke: FontColor.GRAY,
+  snow: FontColor.GRAY, ghostwhite: FontColor.GRAY, lavender: FontColor.GRAY,
+};
+
+/**
+ * CSS 颜色名称到飞书 FontBgColor 枚举值的映射
+ * 带 dark 前缀的映射到 8-14，其他映射到 1-7
+ */
+export const FontBgColorNameMap: Record<string, number> = {
+  // Light 系列 (1-7)
+  pink: FontBgColor.LIGHT_PINK, lightpink: FontBgColor.LIGHT_PINK, red: FontBgColor.LIGHT_PINK,
+  orange: FontBgColor.LIGHT_ORANGE, lightorange: FontBgColor.LIGHT_ORANGE,
+  yellow: FontBgColor.LIGHT_YELLOW, lightyellow: FontBgColor.LIGHT_YELLOW, khaki: FontBgColor.LIGHT_YELLOW,
+  green: FontBgColor.LIGHT_GREEN, lightgreen: FontBgColor.LIGHT_GREEN, lime: FontBgColor.LIGHT_GREEN,
+  cyan: FontBgColor.LIGHT_GREEN, aqua: FontBgColor.LIGHT_GREEN,
+  blue: FontBgColor.LIGHT_BLUE, lightblue: FontBgColor.LIGHT_BLUE, skyblue: FontBgColor.LIGHT_BLUE,
+  purple: FontBgColor.LIGHT_PURPLE, violet: FontBgColor.LIGHT_PURPLE, plum: FontBgColor.LIGHT_PURPLE,
+  gray: FontBgColor.LIGHT_GRAY, grey: FontBgColor.LIGHT_GRAY, silver: FontBgColor.LIGHT_GRAY,
+  lightgray: FontBgColor.LIGHT_GRAY, lightgrey: FontBgColor.LIGHT_GRAY,
+  // Dark 系列 (8-14)
+  darkpink: FontBgColor.DARK_PINK, darkred: FontBgColor.DARK_PINK,
+  crimson: FontBgColor.DARK_PINK, maroon: FontBgColor.DARK_PINK,
+  darkorange: FontBgColor.DARK_ORANGE,
+  darkyellow: FontBgColor.DARK_YELLOW, olive: FontBgColor.DARK_YELLOW,
+  darkgreen: FontBgColor.DARK_GREEN, forestgreen: FontBgColor.DARK_GREEN,
+  darkblue: FontBgColor.DARK_BLUE, navy: FontBgColor.DARK_BLUE, midnightblue: FontBgColor.DARK_BLUE,
+  darkpurple: FontBgColor.DARK_PURPLE, indigo: FontBgColor.DARK_PURPLE,
+  darkviolet: FontBgColor.DARK_PURPLE, darkmagenta: FontBgColor.DARK_PURPLE,
+  darkgray: FontBgColor.DARK_GRAY, darkgrey: FontBgColor.DARK_GRAY,
+  dimgray: FontBgColor.DARK_GRAY, dimgrey: FontBgColor.DARK_GRAY,
+};
+
+// ── 代码语言 ───────────────────────────────────────────────────
+
 export const LanguageMap: Record<string, number> = {
   // 1 - PlainText
   "": 1, "text": 1, "plain": 1, "txt": 1, "plaintext": 1,
@@ -209,51 +347,12 @@ export const LanguageMap: Record<string, number> = {
   "default": 1,
 };
 
-// 外部图片 emoji 标识
+// ── 外部图片 emoji 标识 ───────────────────────────────────────────────────
+
 export const EXTERNAL_IMAGE_EMOJI = "🖼️";
 
-// CSS 颜色名称到十六进制映射表
-export const ColorNameMap: Record<string, string> = {
-  // 基础颜色
-  black: "#000000",
-  white: "#FFFFFF",
-  red: "#FF0000",
-  green: "#00FF00",
-  blue: "#0000FF",
-  yellow: "#FFFF00",
-  cyan: "#00FFFF",
-  magenta: "#FF00FF",
-  // 扩展颜色
-  orange: "#FFA500",
-  purple: "#800080",
-  pink: "#FFC0CB",
-  brown: "#A52A2A",
-  gray: "#808080",
-  grey: "#808080",
-  silver: "#C0C0C0",
-  gold: "#FFD700",
-  navy: "#000080",
-  teal: "#008080",
-  olive: "#808000",
-  maroon: "#800000",
-  aqua: "#00FFFF",
-  lime: "#00FF00",
-  coral: "#FF7F50",
-  salmon: "#FA8072",
-  tomato: "#FF6347",
-  crimson: "#DC143C",
-  indigo: "#4B0082",
-  violet: "#EE82EE",
-  skyblue: "#87CEEB",
-  lightblue: "#ADD8E6",
-  darkblue: "#00008B",
-  lightgreen: "#90EE90",
-  darkgreen: "#006400",
-  lightgray: "#D3D3D3",
-  darkgray: "#A9A9A9",
-};
+// ── 文本对齐方式 ───────────────────────────────────────────────────
 
-// 文本对齐方式
 export const AlignType = {
   LEFT: 1,
   CENTER: 2,

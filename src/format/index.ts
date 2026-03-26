@@ -55,4 +55,4 @@ export {
   buildDividerBlock,
   buildTableBlock,
 } from "./builder.js";
-export type { Block, TextElement, TableData } from "./builder.js";
+export type { Block, TextElement, TextElementStyle, TableData, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./builder.js";

@@ -115,12 +115,8 @@ export function parseTable(lines: string[], startIndex: number): { data: TableDa
     .map(c => c.trim());
   const alignments = separatorCells.map(parseAlignment);
 
-  // 应用对齐到表头
-  headerRow.forEach((cell, i) => {
-    if (i < alignments.length && alignments[i] !== "left") {
-      cell.align = alignments[i];
-    }
-  });
+  // 对齐方式解析（飞书 table_cell create API 不支持 align，保留解析但不使用）
+  const _alignments = alignments;
 
   const rows: TableCell[][] = [headerRow];
   const columnCount = headerRow.length;
@@ -130,13 +126,6 @@ export function parseTable(lines: string[], startIndex: number): { data: TableDa
   while (endIndex < lines.length) {
     const row = parseTableRow(lines[endIndex]);
     if (!row) break;
-
-    // 应用对齐到数据行
-    row.forEach((cell, i) => {
-      if (i < alignments.length && alignments[i] !== "left") {
-        cell.align = alignments[i];
-      }
-    });
 
     // 补齐列数
     while (row.length < columnCount) row.push({ content: "" });
