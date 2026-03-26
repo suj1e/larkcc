@@ -313,9 +313,15 @@ setup 不需要填 open_id，发第一条消息自动保存。
 - 👌 处理中打 reaction，完成换 DONE
 - 💬 回复引用原消息
 - ⚡ 工具调用实时展示
-- 📋 Markdown 卡片渲染
+- 🌊 流式输出（互斥守卫 + 自适应节流 + 长间隔批处理）
+- 📋 Markdown 卡片渲染（自动标题降级适配）
 - 📄 超长消息支持分段发送或写入云文档
+- 🛡️ 文档写入容错（单表/批次失败不影响整篇文档）
+- 🎯 格式指导注入（从源头优化输出质量）
 - 🖼 图片理解（支持富文本多图）
+- 🧠 思考过程分离（可折叠显示 Claude 的推理过程）
+- ⏱ 响应元数据（耗时、token 数实时显示）
+- 🖼 外部图片自动上传（下载 → 飞书 → 渲染，支持卡片和文档）
 - ⌨️ Slash 命令
 - ⏹ `/stop` 中断任务
 - 👥 群聊 @ 触发
@@ -368,6 +374,89 @@ setup 不需要填 open_id，发第一条消息自动保存。
 \<u\> 显示为 <u>
 ```
 
+## 流式输出
+
+回复内容会以打字机效果逐字显示，无需等待完整输出。
+
+内部使用 FlushController：
+- **互斥守卫** — 防止并发刷新冲突
+- **自适应节流** — 根据上次刷新时间动态调整间隔
+- **长间隔批处理** — 2 秒无新内容自动 flush 剩余缓冲
+
+### 配置
+
+```yaml
+streaming:
+  enabled: true                # 是否启用流式（默认 true）
+  mode: update                 # update（message.patch）| cardkit | none
+  flush_interval_ms: 300       # 最小刷新间隔（毫秒）
+  thinking_enabled: false      # 是否显示 Claude 思考过程
+  fallback_on_error: true      # 失败时降级为一次性发送
+
+# 图片自动解析（下载外部图片上传到飞书）
+image_resolver:
+  enabled: true                # 是否启用（默认 true）
+```
+
+### 模式说明
+
+| 模式 | 说明 | 额外权限 |
+|------|------|---------|
+| `update` | 使用消息 patch API 模拟流式 | 无（默认即可用） |
+| `cardkit` | 使用飞书 CardKit API（真正打字机效果） | `cardkit:card:write` |
+| `none` | 禁用流式，等待完整输出后一次性发送 | 无 |
+
+- `update` 模式为默认模式，使用现有的消息更新 API，无需额外权限
+- `cardkit` 模式需要开通 CardKit 权限，体验更流畅，失败时自动降级为 `update`
+- 流式过程中如果内容超长，最终会自动写入云文档并回复链接
+
+### 中断
+
+流式输出过程中可以使用 `/stop` 中断，卡片会立即显示中断消息。
+
+### 思考过程
+
+开启 `streaming.thinking_enabled: true` 后，Claude 的扩展思考过程会以可折叠面板显示在回复上方：
+
+- 流式期间显示 "💭 思考中..." 提示
+- 完成后思考内容收起在折叠面板中，点击可展开查看
+- 关闭时完全过滤 `<thinking>` 标签，用户无感
+
+### 响应元数据
+
+每条回复底部自动显示耗时和 token 用量：
+
+```
+⏱ 8.2s · 1,234 tokens
+```
+
+仅显示在卡片消息中，云文档不追加。
+
+## 格式优化
+
+### 卡片自动优化
+
+发送到飞书卡片的 Markdown 会自动经过优化管线处理：
+
+1. **标题降级** — H1→H4, H2-H6→H5（飞书卡片只支持 H4/H5）
+2. **代码块保护** — 代码块内容不会被其他处理逻辑误解析
+3. **外部图片上传** — 自动下载外部图片并上传到飞书，替换为 `img_xxx` 格式（卡片和文档均支持）
+
+### 格式指导（System Prompt）
+
+默认启用，通过 Claude Code SDK 的 system prompt 注入飞书格式规范，从源头提升输出质量。整个会话只需注入一次，不重复消耗 token。
+
+```yaml
+format_guide:
+  enabled: true    # 是否启用（默认 true）
+```
+
+**自定义格式指导：**
+
+编辑 `~/.larkcc/format-guide.md` 即可覆盖默认内容。格式指导内容是纯 Markdown，你可以根据实际需求增减规则。
+
+查看默认格式指导：`resources/format-guide.md`（随项目发布）。
+
 ## 消息类型支持
 
 | 类型 | 单聊 | 群聊 |
@@ -407,6 +496,22 @@ overflow:
   document:
     threshold: 2800           # 写文档阈值
     title_template: "{cwd} - {session_id} - {datetime}"
+
+# 格式指导（从源头优化 Claude 输出质量）
+format_guide:
+  enabled: true               # 是否注入飞书格式要求到 prompt
+
+# 流式输出配置
+streaming:
+  enabled: true               # 是否启用流式（默认 true）
+  mode: update                # update | cardkit | none
+  flush_interval_ms: 300      # 最小刷新间隔（毫秒）
+  thinking_enabled: false     # 是否显示思考过程
+  fallback_on_error: true     # 失败时降级
+
+# 图片自动解析（下载外部图片上传到飞书）
+image_resolver:
+  enabled: true               # 是否启用（默认 true）
 
 commands:
   deploy: "部署到测试环境"
@@ -489,9 +594,13 @@ profiles:
 
 - 支持 Markdown 格式（标题、代码块、列表等）
 
-**无效图片过滤：**
+**图片处理：**
 
-当内容包含 `blob:` 格式的无效图片 URL（如 websearch 返回的临时图片）时，系统会自动过滤并在消息末尾提示。
+- `blob:` 格式的无效图片 URL 自动过滤
+- 外部图片（`https://`）自动下载并上传到飞书，替换为内部 `img_xxx` 格式
+- 上传失败的图片降级为链接，不影响整体流程
+- 图片大小限制 10MB，下载超时 10 秒
+- 卡片和云文档均支持图片渲染
 
 **自动清理：**
 
@@ -536,18 +645,44 @@ overflow:
 
 ### 权限
 
+权限按功能分组，建议全部开通：
+
+#### 基础消息（必开）
+
 | 权限 | 用途 |
 |------|------|
-| `im:message` | 基础消息（含下载消息中的文件） |
-| `im:message:send_as_bot` | 发送消息 |
-| `im:message.p2p_msg:readonly` | 接收私聊 |
+| `im:message` | 基础消息（含下载消息中的图片、文件） |
+| `im:message:send_as_bot` | 以机器人身份发送消息、回复消息、更新消息（**流式输出也依赖此权限**） |
+| `im:message.p2p_msg:readonly` | 接收私聊消息 |
 | `im:message.group_at_msg:readonly` | 接收群 @ 消息 |
-| `im:message.reactions:write_only` | 打 reaction |
-| `cardkit:card:write` | 发送卡片 |
-| `docx:document` | 创建/编辑云文档（超长消息写入） |
-| `drive:file` | 删除云空间文件（清理旧文档） |
+| `im:message.reactions:write_only` | 打 reaction 表情（处理中/完成/出错状态） |
+
+#### 卡片与富文本
+
+| 权限 | 用途 |
+|------|------|
+| `cardkit:card:write` | 发送交互式卡片、CardKit 流式输出 |
 
 > 💡 `im:message` 权限已包含下载消息中资源文件（图片、文件）的能力
+
+#### 云文档（超长消息写入）
+
+| 权限 | 用途 |
+|------|------|
+| `docx:document` | 创建/编辑云文档（`overflow.mode: document` 时需要） |
+| `drive:file` | 删除云空间文件（自动清理旧文档时需要） |
+
+> 💡 不使用文档模式时，这两个权限可以不开
+
+#### 开通步骤
+
+1. 进入 [飞书开发者后台](https://open.feishu.cn/) → 选择你的应用
+2. 左侧菜单 **权限管理** → 搜索并开通上述权限
+3. 点击 **权限管理** 页面上方的 **权限配置** → 批量开通
+4. 创建新版本 → 申请发布（企业自建应用管理员审批即可）
+5. 发布成功后权限生效
+
+> ⚠️ 权限变更后需要重新发布应用版本，已运行的 larkcc 需要重启
 
 ### 事件订阅
 
@@ -748,7 +883,7 @@ You: [Error screenshot] How to fix this
 You: [Rich text with multiple images] Analyze these images
 ```
 
-> **Note:** Invalid image URLs (like `blob:` URLs from websearch) are automatically filtered.
+> **Note:** Invalid image URLs (like `blob:` URLs from websearch) are automatically filtered. External images are automatically downloaded and uploaded to Feishu for proper rendering.
 
 ## File Support
 
@@ -821,16 +956,28 @@ larkcc -p mybot             # Use specified bot
 
 ### Permissions
 
+#### Basic Messaging (Required)
+
 | Permission | Purpose |
 |------------|---------|
-| `im:message` | Basic message (including file download) |
-| `im:message:send_as_bot` | Send messages |
+| `im:message` | Basic message (including image/file download) |
+| `im:message:send_as_bot` | Send/reply/update messages (**streaming also depends on this**) |
 | `im:message.p2p_msg:readonly` | Receive direct messages |
 | `im:message.group_at_msg:readonly` | Receive group @ messages |
-| `im:message.reactions:write_only` | Add reactions |
-| `cardkit:card:write` | Send cards |
-| `docx:document` | Create/edit cloud documents |
-| `drive:file` | Delete cloud files |
+| `im:message.reactions:write_only` | Add reactions (processing/done/error status) |
+
+#### Cards
+
+| Permission | Purpose |
+|------------|---------|
+| `cardkit:card:write` | Send interactive cards, CardKit streaming |
+
+#### Cloud Documents (for overflow mode)
+
+| Permission | Purpose |
+|------------|---------|
+| `docx:document` | Create/edit cloud documents (when `overflow.mode: document`) |
+| `drive:file` | Delete cloud files (auto-cleanup of old documents) |
 
 ### Event Subscription
 

@@ -649,6 +649,7 @@ export async function startApp(
         try {
           // 处理单文件：修改 prompt 包含文件信息
           let finalPrompt = text;
+
           if (downloadedFile && !multifile.isActive(profileKey, chatId)) {
             const fp = fileConfig?.prompt ?? "分析文件 {filename}（路径：{filepath}，大小：{size}，类型：{mime_type}）";
             const sizeStr = `${Math.round(downloadedFile.size / 1024)}KB`;

@@ -35,6 +35,8 @@ export {
   isDivider,
   isBulletList,
   isOrderedList,
+  parseBulletList,
+  parseOrderedList,
   isQuote,
   countTables,
 } from "./parser.js";
@@ -53,6 +55,18 @@ export {
   buildEquationBlock,
   buildCalloutBlock,
   buildDividerBlock,
+  buildImageBlock,
   buildTableBlock,
 } from "./builder.js";
 export type { Block, TextElement, TextElementStyle, TableData, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./builder.js";
+
+// 卡片优化
+export { optimizeForCard } from "./card-optimize.js";
+
+// Thinking 解析
+export { parseThinking, stripThinking } from "./thinking.js";
+export type { ThinkingResult } from "./thinking.js";
+
+// 图片解析
+export { resolveImages } from "./image-resolver.js";
+export type { ImageResolveResult } from "./image-resolver.js";

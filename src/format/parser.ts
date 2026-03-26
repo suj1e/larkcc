@@ -305,10 +305,34 @@ export function isBulletList(line: string): boolean {
 }
 
 /**
+ * 解析无序列表（含缩进层级）
+ * 返回内容文本和层级（0-based，最多 2 级）
+ */
+export function parseBulletList(line: string): { content: string; level: number } | null {
+  const match = line.match(/^(\s*)[-*]\s+(.+)$/);
+  if (!match || parseTodo(line)) return null;
+  const indent = match[1].length;
+  const level = Math.min(Math.floor(indent / 2), 2); // 每 2 空格一级，最多 2 级
+  return { content: match[2].trim(), level };
+}
+
+/**
  * 检测是否为有序列表
  */
 export function isOrderedList(line: string): boolean {
   return /^(\s*)(\d+)\.\s+/.test(line);
+}
+
+/**
+ * 解析有序列表（含缩进层级）
+ * 返回内容文本和层级（0-based，最多 2 级）
+ */
+export function parseOrderedList(line: string): { content: string; level: number } | null {
+  const match = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+  if (!match) return null;
+  const indent = match[1].length;
+  const level = Math.min(Math.floor(indent / 2), 2); // 每 2 空格一级，最多 2 级
+  return { content: match[3].trim(), level };
 }
 
 /**

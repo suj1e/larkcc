@@ -36,8 +36,7 @@ export interface OverflowConfig {
 
 // 卡片表格限制配置
 export interface CardTableConfig {
-  max_tables_per_card: number;   // 单卡片最大表格数，默认 5
-  max_tables_split: number;      // 超过此数量写文档，默认 10
+  max_tables_per_card: number;   // 单卡片最大表格数，超过则拆分或写文档，默认 5
 }
 
 export interface ExecSecurity {
@@ -52,6 +51,22 @@ export interface ReactionConfig {
   error: string;       // 出错的 emoji_type
 }
 
+export interface FormatGuideConfig {
+  enabled: boolean;  // 是否注入飞书格式指导 prompt
+}
+
+export interface StreamingConfig {
+  enabled: boolean;            // 是否启用流式输出
+  mode: "cardkit" | "update" | "none";  // 流式模式
+  flush_interval_ms: number;   // 刷新间隔（毫秒）
+  thinking_enabled: boolean;   // 是否显示思考过程
+  fallback_on_error: boolean;  // CardKit/update 失败时是否降级
+}
+
+export interface ImageResolverConfig {
+  enabled: boolean;            // 是否启用图片解析（下载外部图片上传到飞书）
+}
+
 export interface ProfileConfig {
   feishu: FeishuConfig;
   claude: {
@@ -59,6 +74,8 @@ export interface ProfileConfig {
     allowed_tools?: string[];
   };
   overflow?: OverflowConfig;
+  format_guide?: FormatGuideConfig;  // 格式指导配置
+  image_resolver?: ImageResolverConfig;  // 图片解析配置
   image_prompt?: string;  // 图片消息的默认提示词
   file?: Partial<FileConfig>;  // 文件处理配置
   commands?: Record<string, string>;  // 自定义 PROMPT 命令
@@ -70,12 +87,18 @@ export interface LarkccConfig extends ProfileConfig {
   reaction?: ReactionConfig;
   thinking_words?: string[];
   card_table?: CardTableConfig;
+  format_guide?: FormatGuideConfig;
+  streaming?: StreamingConfig;
+  image_resolver?: ImageResolverConfig;
 }
 
 export interface RawConfig {
   feishu: FeishuConfig;          // default profile
   claude?: ProfileConfig["claude"];
   overflow?: OverflowConfig;
+  format_guide?: FormatGuideConfig;  // 格式指导配置
+  streaming?: StreamingConfig;   // 流式输出配置
+  image_resolver?: ImageResolverConfig;  // 图片解析配置
   image_prompt?: string;         // 图片消息的默认提示词
   file?: Partial<FileConfig>;    // 文件处理配置
   commands?: Record<string, string>;  // 自定义 PROMPT 命令
@@ -141,7 +164,22 @@ const DEFAULT_REACTION: ReactionConfig = {
 
 const DEFAULT_CARD_TABLE: CardTableConfig = {
   max_tables_per_card: 5,
-  max_tables_split: 10,
+};
+
+const DEFAULT_FORMAT_GUIDE: FormatGuideConfig = {
+  enabled: true,
+};
+
+const DEFAULT_STREAMING: StreamingConfig = {
+  enabled: true,
+  mode: "update",
+  flush_interval_ms: 300,
+  thinking_enabled: false,
+  fallback_on_error: true,
+};
+
+const DEFAULT_IMAGE_RESOLVER: ImageResolverConfig = {
+  enabled: true,
 };
 
 const DEFAULT_THINKING_WORDS: string[] = [
@@ -278,7 +316,19 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     thinking_words: raw.thinking_words ?? DEFAULT_THINKING_WORDS,
     card_table: {
       max_tables_per_card: raw.card_table?.max_tables_per_card ?? DEFAULT_CARD_TABLE.max_tables_per_card,
-      max_tables_split: raw.card_table?.max_tables_split ?? DEFAULT_CARD_TABLE.max_tables_split,
+    },
+    format_guide: {
+      enabled: raw.format_guide?.enabled ?? DEFAULT_FORMAT_GUIDE.enabled,
+    },
+    streaming: {
+      enabled: raw.streaming?.enabled ?? DEFAULT_STREAMING.enabled,
+      mode: raw.streaming?.mode ?? DEFAULT_STREAMING.mode,
+      flush_interval_ms: raw.streaming?.flush_interval_ms ?? DEFAULT_STREAMING.flush_interval_ms,
+      thinking_enabled: raw.streaming?.thinking_enabled ?? DEFAULT_STREAMING.thinking_enabled,
+      fallback_on_error: raw.streaming?.fallback_on_error ?? DEFAULT_STREAMING.fallback_on_error,
+    },
+    image_resolver: {
+      enabled: raw.image_resolver?.enabled ?? DEFAULT_IMAGE_RESOLVER.enabled,
     },
   };
 }
@@ -336,6 +386,21 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   // 添加默认 thinking_words 配置（首次创建时）
   if (!raw.thinking_words) {
     raw.thinking_words = DEFAULT_THINKING_WORDS;
+  }
+
+  // 添加默认 streaming 配置（首次创建时）
+  if (!raw.streaming) {
+    raw.streaming = DEFAULT_STREAMING;
+  }
+
+  // 添加默认 image_resolver 配置（首次创建时）
+  if (!raw.image_resolver) {
+    raw.image_resolver = DEFAULT_IMAGE_RESOLVER;
+  }
+
+  // 添加默认 format_guide 配置（首次创建时）
+  if (!raw.format_guide) {
+    raw.format_guide = DEFAULT_FORMAT_GUIDE;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");

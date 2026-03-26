@@ -6,10 +6,17 @@ import {
   replyFinalCard,
   sendToolCard,
   updateToolCard,
+  getTenantAccessToken,
 } from "./feishu.js";
+import type { ReplyContext } from "./feishu.js";
 import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
+import { getFormatGuideContent } from "./format/guide.js";
+import { parseThinking, stripThinking } from "./format/thinking.js";
+import { resolveImages } from "./format/image-resolver.js";
+import { createStreamingCard } from "./streaming.js";
+import type { StreamingCard, CompleteOptions } from "./streaming.js";
 
 const TOOL_LABELS: Record<string, string> = {
   Read:            "📂 读取文件",
@@ -39,9 +46,56 @@ function truncate(str: string, len: number): string {
   return str.length > len ? str.slice(0, len) + "..." : str;
 }
 
+/**
+ * 构建 ReplyContext（多个地方复用）
+ */
+function buildReplyContext(
+  config: LarkccConfig,
+  profile: string | undefined,
+  cwd: string,
+  chatId: string,
+  rootMsgId: string,
+): ReplyContext {
+  return {
+    profile: profile ?? "default",
+    cwd,
+    sessionId: getSession() ?? "",
+    overflow: config.overflow!,
+    chatId,
+    rootMsgId,
+    appId: config.feishu.app_id,
+    appSecret: config.feishu.app_secret,
+    card_table: config.card_table,
+  };
+}
+
+/**
+ * 构建底部元数据字符串
+ * 格式：⏱ 8.2s · Claude Sonnet 4 · 1,234 tokens · ⚠️ 2 张图片上传失败
+ */
+function buildFooterMetadata(elapsedSeconds: number, model?: string, tokens?: number, imageFailed?: number): string {
+  const parts = [`⏱ ${elapsedSeconds.toFixed(1)}s`];
+  if (model) parts.push(model);
+  if (tokens) parts.push(`${tokens.toLocaleString()} tokens`);
+  if (imageFailed && imageFailed > 0) parts.push(`⚠️ ${imageFailed} 张图片上传失败`);
+  return parts.join(' · ');
+}
+
 export interface ImageInput {
   base64: string;
   mediaType: string;
+}
+
+/** SDK result 事件的类型定义 */
+interface SDKResultEvent {
+  session_id?: string;
+  result?: {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+    };
+    model?: string;
+  };
 }
 
 export async function runAgent(
@@ -56,9 +110,21 @@ export async function runAgent(
   profile?: string              // 机器人配置名
 ): Promise<void> {
   const sessionId = getSession();
+  const startTime = Date.now();
 
   let textBuffer = "";
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
+
+  // 构建 ReplyContext
+  const replyContext = buildReplyContext(config, profile, cwd, chatId, rootMsgId);
+
+  // 创建流式卡片（如果配置启用）
+  const streamingCard = createStreamingCard(config.streaming, client, rootMsgId, replyContext);
+
+  // 构建格式指导 system prompt（追加到 Claude Code 默认 system prompt 后面）
+  const systemPrompt = config.format_guide?.enabled !== false
+    ? getFormatGuideContent()
+    : undefined;
 
   // 构建 prompt content（支持图片）
   const promptContent: any[] = [];
@@ -99,21 +165,17 @@ export async function runAgent(
         permissionMode: config.claude.permission_mode as "acceptEdits",
         allowedTools: config.claude.allowed_tools,
         abortSignal,
+        ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
     } as any)) {
     // 检查是否已中断
     if (abortSignal?.aborted) {
       logger.info("Agent aborted by user");
-      await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", {
-        profile: profile ?? "default",
-        cwd,
-        sessionId: getSession() ?? "",
-        overflow: config.overflow!,
-        chatId,
-        rootMsgId,
-        appId: config.feishu.app_id,
-        appSecret: config.feishu.app_secret,
-      });
+      if (streamingCard) {
+        await streamingCard.abort("⏹ 任务已中断");
+      } else {
+        await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", replyContext);
+      }
       break;
     }
 
@@ -129,6 +191,8 @@ export async function runAgent(
       for (const block of blocks) {
         if (block.type === "text" && block.text) {
           textBuffer += block.text;
+          // 流式追加
+          streamingCard?.append(block.text);
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
@@ -137,16 +201,7 @@ export async function runAgent(
           if (block.name === "AskUserQuestion") {
             const input = block.input as { questions?: Array<{ question: string }> };
             const questions = input.questions?.map(q => q.question).join("\n") ?? "";
-            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions, {
-              profile: profile ?? "default",
-              cwd,
-              sessionId: getSession() ?? "",
-              overflow: config.overflow!,
-              chatId,
-              rootMsgId,
-              appId: config.feishu.app_id,
-              appSecret: config.feishu.app_secret,
-            });
+            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions, replyContext);
             break;
           }
           const detail = formatInput(block.name, block.input ?? {});
@@ -177,26 +232,68 @@ export async function runAgent(
     }
 
     if (event.type === "result") {
-      const resultEvent = event as { session_id?: string };
+      const resultEvent = event as SDKResultEvent;
       if (resultEvent.session_id) {
         setSession(resultEvent.session_id);
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
+
       if (textBuffer) {
-        await replyFinalCard(client, chatId, rootMsgId, textBuffer, {
-          profile: profile ?? "default",
-          cwd,
-          sessionId: getSession() ?? "",
-          overflow: config.overflow!,
-          chatId,
-          rootMsgId,
-          appId: config.feishu.app_id,
-          appSecret: config.feishu.app_secret,
-        });
+        // 计算耗时
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+
+        // 尝试从 SDK result 中提取 token 和 model 信息
+        const usage = resultEvent.result?.usage;
+        const tokens = usage
+          ? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
+          : undefined;
+        const model = resultEvent.result?.model;
+
+        // 解析 thinking
+        const thinkingEnabled = config.streaming?.thinking_enabled === true;
+        let finalContent: string;
+        let thinking: string | undefined;
+
+        if (thinkingEnabled) {
+          const parsed = parseThinking(textBuffer);
+          finalContent = parsed.content;
+          thinking = parsed.thinking || undefined;
+        } else {
+          finalContent = stripThinking(textBuffer);
+        }
+
+        // 解析图片（下载外部图片上传到飞书）
+        let imageFailedCount = 0;
+        if (finalContent && config.image_resolver?.enabled !== false) {
+          try {
+            const token = await getTenantAccessToken(config.feishu.app_id, config.feishu.app_secret);
+            const imgResult = await resolveImages(finalContent, token);
+            finalContent = imgResult.content;
+            imageFailedCount = imgResult.failed;
+          } catch (error) {
+            console.error("[IMAGE] Image resolution failed:", error);
+            // 继续发送，不阻断流程
+          }
+        }
+
+        // 构建元数据（一次性构建，避免可变拼接）
+        const metadata = buildFooterMetadata(elapsedSeconds, model, tokens, imageFailedCount);
+
+        const completeOptions: CompleteOptions = {
+          metadata,
+          thinking,
+        };
+
+        if (streamingCard) {
+          // 流式完成：最终更新卡片（内部处理 overflow）
+          await streamingCard.complete(finalContent, completeOptions);
+        } else {
+          await replyFinalCard(client, chatId, rootMsgId, finalContent, replyContext, completeOptions);
+        }
       }
       logger.reply(chatId);
     }
-  }
+    }
   } catch (err) {
     console.error(`[query error]:`, err);
     throw err;

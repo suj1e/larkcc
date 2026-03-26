@@ -59,6 +59,7 @@ export interface Block {
   todo?: { style: { done?: boolean }; elements: TextElement[] };
   equation?: { elements: Array<{ equation: { content: string } }> };
   divider?: {};
+  image?: { token: string };
 }
 
 // ── Descendants API 类型（用于表格、高亮块） ────────────────────────
@@ -107,6 +108,8 @@ export interface TableDescendants {
     | { block_type: 32; block_id: string; children: string[]; table_cell: {} }
     | { block_type: 2; block_id: string; text: { elements: TextElement[] } }
   >;
+  /** 原始 Markdown 文本（用于降级时保留可读性） */
+  rawMarkdown?: string;
 }
 
 /**
@@ -349,7 +352,11 @@ export function parseInlineText(text: string): TextElement[] {
     }
   }
 
-  return elements;
+  // 过滤掉 content 为空的 text_run（避免 API 校验失败）
+  return elements.filter(e => {
+    if (e.text_run && e.text_run.content === "") return false;
+    return true;
+  });
 }
 
 // ── 块构建函数 ───────────────────────────────────────────────────
@@ -387,17 +394,17 @@ export function buildCodeBlock(code: string, lang: string = ""): Block {
   };
 }
 
-export function buildBulletBlock(content: string): Block {
+export function buildBulletBlock(content: string, level: number = 0): Block {
   return {
     block_type: BlockType.BULLET,
-    bullet: { elements: parseInlineText(content) },
+    bullet: { elements: parseInlineText(content), ...(level > 0 ? { level } : {}) },
   };
 }
 
-export function buildOrderedBlock(content: string): Block {
+export function buildOrderedBlock(content: string, level: number = 0): Block {
   return {
     block_type: BlockType.ORDERED,
-    ordered: { elements: parseInlineText(content) },
+    ordered: { elements: parseInlineText(content), ...(level > 0 ? { level } : {}) },
   };
 }
 
@@ -459,6 +466,13 @@ export function buildDividerBlock(): Block {
   return {
     block_type: BlockType.DIVIDER,
     divider: {},
+  };
+}
+
+export function buildImageBlock(imageKey: string): Block {
+  return {
+    block_type: BlockType.IMAGE,
+    image: { token: imageKey },
   };
 }
 
@@ -587,21 +601,48 @@ export function buildTableBlock(data: TableData): TableDescendants {
     }
   }
 
-  // 计算每列最大宽度
+  // 计算每列最大宽度（基于总可用宽度 720px 按比例分配）
+  const TOTAL_WIDTH = 720;
+  const MIN_COL_WIDTH = 60;
   const columnWidths: number[] = [];
+  const columnTextWidths: number[] = [];
+
   for (let colIndex = 0; colIndex < columnSize; colIndex++) {
-    let maxWidth = 50;
+    let maxTextWidth = 0;
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
       if (colIndex < rows[rowIndex].length) {
         const cell = rows[rowIndex][colIndex];
         const width = calculateTextWidth(cell.content);
         const colspan = cell.merge?.colspan || 1;
         if (colspan === 1) {
-          maxWidth = Math.max(maxWidth, Math.min(width * 10 + 20, 300));
+          maxTextWidth = Math.max(maxTextWidth, width);
         }
       }
     }
-    columnWidths.push(maxWidth);
+    columnTextWidths.push(Math.max(maxTextWidth, 3)); // 最少 3 个字符宽度
+  }
+
+  // 按比例分配总宽度
+  const totalTextWidth = columnTextWidths.reduce((sum, w) => sum + w, 0);
+  if (totalTextWidth === 0) {
+    // 所有列为空时均分宽度
+    const equalWidth = Math.max(Math.floor(TOTAL_WIDTH / columnTextWidths.length), MIN_COL_WIDTH);
+    for (let i = 0; i < columnTextWidths.length; i++) {
+      columnWidths.push(equalWidth);
+    }
+  } else {
+    for (const textWidth of columnTextWidths) {
+      const proportional = Math.round((textWidth / totalTextWidth) * TOTAL_WIDTH);
+      columnWidths.push(Math.max(proportional, MIN_COL_WIDTH));
+    }
+  }
+
+  // 如果总宽度超出 TOTAL_WIDTH（由 MIN_COL_WIDTH 导致），按比例缩减
+  const totalAllocated = columnWidths.reduce((sum, w) => sum + w, 0);
+  if (totalAllocated > TOTAL_WIDTH) {
+    for (let i = 0; i < columnWidths.length; i++) {
+      columnWidths[i] = Math.max(Math.round(columnWidths[i] * TOTAL_WIDTH / totalAllocated), MIN_COL_WIDTH);
+    }
   }
 
   return {

@@ -15,6 +15,7 @@ import {
   buildEquationBlock,
   buildCalloutBlock,
   buildDividerBlock,
+  buildImageBlock,
   buildTableBlock,
   parseInlineText,
 } from "./builder.js";
@@ -29,6 +30,8 @@ import {
   isDivider,
   isBulletList,
   isOrderedList,
+  parseBulletList,
+  parseOrderedList,
 } from "./parser.js";
 import { sanitizeContent } from "./sanitize.js";
 import { BlockType } from "./constants.js";
@@ -127,7 +130,10 @@ export function markdownToBlocks(
     const tableResult = parseTable(lines, i);
     if (tableResult) {
       flushPara();
-      items.push({ type: "table", data: buildTableBlock(tableResult.data) });
+      const tableBlock = buildTableBlock(tableResult.data);
+      // 保留原始 Markdown，用于表格写入失败时的降级显示
+      tableBlock.rawMarkdown = lines.slice(i, tableResult.endIndex).join("\n");
+      items.push({ type: "table", data: tableBlock });
       i = tableResult.endIndex;
       continue;
     }
@@ -166,23 +172,37 @@ export function markdownToBlocks(
       continue;
     }
 
-    // --- 无序列表 ---
+    // --- 无序列表（支持嵌套层级） ---
     if (isBulletList(line)) {
       flushPara();
-      const match = line.match(/^(\s*)[-*]\s+(.+)$/);
-      if (match) {
-        items.push({ type: "simple", block: buildBulletBlock(match[2]) });
+      const parsed = parseBulletList(line);
+      if (parsed) {
+        items.push({ type: "simple", block: buildBulletBlock(parsed.content, parsed.level) });
       }
       continue;
     }
 
-    // --- 有序列表 ---
+    // --- 有序列表（支持嵌套层级） ---
     if (isOrderedList(line)) {
       flushPara();
-      const match = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
-      if (match) {
-        items.push({ type: "simple", block: buildOrderedBlock(match[3]) });
+      const parsed = parseOrderedList(line);
+      if (parsed) {
+        items.push({ type: "simple", block: buildOrderedBlock(parsed.content, parsed.level) });
       }
+      continue;
+    }
+
+    // --- 图片（img_xxx 格式，已由 ImageResolver 处理） ---
+    const imgMatch = line.trim().match(/^!\[([^\]]*)\]\((img_[^)]+)\)$/i);
+    if (imgMatch) {
+      flushPara();
+      items.push({ type: "simple", block: buildImageBlock(imgMatch[2]) });
+      continue;
+    }
+
+    // --- 空行（段落分隔符） ---
+    if (line.trim() === "") {
+      flushPara();
       continue;
     }
 

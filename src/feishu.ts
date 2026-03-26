@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { OverflowConfig, CardTableConfig } from "./config.js";
-import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables } from "./format/index.js";
+import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType } from "./format/index.js";
 import type { Block, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
@@ -123,7 +123,6 @@ export async function updateText(
 // 最终回复卡片，超长分段发送，卡片失败 fallback 到普通文本
 const CHUNK_SIZE = 2800;
 const DEFAULT_MAX_TABLES_PER_CARD = 5;
-const DEFAULT_MAX_TABLES_SPLIT = 10;
 
 function splitMarkdown(text: string, size: number): string[] {
   if (text.length <= size) return [text];
@@ -229,67 +228,68 @@ function splitMarkdownByTables(markdown: string, maxTables: number): string[] {
   return chunks;
 }
 
+export interface ReplyFinalOptions {
+  /** 底部元数据（耗时、token 等），仅追加到卡片 */
+  metadata?: string;
+  /** 思考内容，显示在可折叠区域 */
+  thinking?: string;
+}
+
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
   rootMsgId: string,
   markdown: string,
-  context?: ReplyContext
+  context?: ReplyContext,
+  options?: ReplyFinalOptions,
 ): Promise<void> {
   const threshold = context?.overflow.mode === "document"
     ? context.overflow.document.threshold
     : context?.overflow.chunk.threshold ?? CHUNK_SIZE;
 
-  // 统计表格数量
   const tableCount = countTables(markdown);
   const maxTablesPerCard = context?.card_table?.max_tables_per_card ?? DEFAULT_MAX_TABLES_PER_CARD;
-  const maxTablesSplit = context?.card_table?.max_tables_split ?? DEFAULT_MAX_TABLES_SPLIT;
 
-  // 表格数量超过阈值，写文档
-  if (tableCount > maxTablesSplit) {
-    if (context?.overflow.mode === "document") {
+  // 表格数量超过卡片承载能力
+  if (tableCount > maxTablesPerCard) {
+    if (context?.overflow.mode === "document" && markdown.length > threshold) {
+      // 表格多 + 内容长 → 文档（文档比分片更适合承载大量表格+长文本）
       await replyWithDocument(client, chatId, rootMsgId, markdown, context);
     } else {
-      // 没有 document 模式，回退到分片
-      await sendMessageChunk(client, rootMsgId, `⚠️ 表格数量过多（${tableCount} 个），建议使用 document 模式`);
-      const chunks = splitMarkdown(markdown, threshold);
-      for (let i = 0; i < chunks.length; i++) {
-        const content = chunks.length > 1
-          ? `**(${i + 1}/${chunks.length})**\n${chunks[i]}`
-          : chunks[i];
-        await sendMessageChunk(client, rootMsgId, content);
+      // 表格多 + 内容短 → 按表格拆分为多个卡片
+      const chunks = splitMarkdownByTables(markdown, maxTablesPerCard);
+      for (const chunk of chunks) {
+        await sendMessageChunk(client, rootMsgId, chunk);
       }
-    }
-    return;
-  }
-
-  // 表格数量需要拆分发送
-  if (tableCount > maxTablesPerCard) {
-    const chunks = splitMarkdownByTables(markdown, maxTablesPerCard);
-    for (const chunk of chunks) {
-      await sendMessageChunk(client, rootMsgId, chunk);
     }
     return;
   }
 
   // 不超限，直接发送
   if (markdown.length <= threshold) {
-    await sendMessageChunk(client, rootMsgId, markdown);
+    const finalContent = options?.metadata
+      ? `${markdown}\n\n---\n${options.metadata}`
+      : markdown;
+    await sendMessageChunk(client, rootMsgId, finalContent, options?.thinking);
     return;
   }
 
   // 超限处理
   if (context?.overflow.mode === "document") {
-    // 写入云文档
+    // 文档模式：不追加 metadata 和 thinking
     await replyWithDocument(client, chatId, rootMsgId, markdown, context);
   } else {
-    // 分片发送
     const chunks = splitMarkdown(markdown, context?.overflow.chunk.threshold ?? CHUNK_SIZE);
     for (let i = 0; i < chunks.length; i++) {
+      const isLast = i === chunks.length - 1;
       const content = chunks.length > 1
         ? `**(${i + 1}/${chunks.length})**\n${chunks[i]}`
         : chunks[i];
-      await sendMessageChunk(client, rootMsgId, content);
+      // 仅在最后一个 chunk 追加 metadata 和 thinking
+      const finalContent = isLast && options?.metadata
+        ? `${content}\n\n---\n${options.metadata}`
+        : content;
+      await sendMessageChunk(client, rootMsgId, finalContent, isLast ? options?.thinking : undefined);
     }
   }
 }
@@ -297,7 +297,8 @@ export async function replyFinalCard(
 async function sendMessageChunk(
   client: lark.Client,
   rootMsgId: string,
-  content: string
+  content: string,
+  thinking?: string,
 ): Promise<void> {
   // 过滤 blob URL 和外部图片
   const { content: sanitizedContent, warnings } = sanitizeContent(content);
@@ -309,7 +310,8 @@ async function sendMessageChunk(
   }
 
   try {
-    const card = buildMarkdownCard(finalContent);
+    const optimizedContent = optimizeForCard(finalContent);
+    const card = buildMarkdownCard(optimizedContent, [], thinking ? { thinking } : undefined);
     await (client.im.message as any).reply({
       path: { message_id: rootMsgId },
       data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
@@ -331,7 +333,8 @@ async function replyWithDocument(
   context: ReplyContext
 ): Promise<void> {
   try {
-    // 获取 tenant_access_token
+    // 获取 tenant_access_token（强制刷新，避免长文档写入中途过期）
+    invalidateTokenCache();
     const token = await getTenantAccessToken(context.appId, context.appSecret);
 
     // 构建文档标题
@@ -376,13 +379,16 @@ async function replyWithDocument(
     };
 
     // 创建文档（在应用云空间）
-    const { docUrl, docId } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
+    const { docUrl, docId, warnings: docWarnings } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
 
     // 注册新文档到本地记录
     registerDocument(docId, context.profile);
 
     // 构建回复消息
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
+    if (docWarnings.length > 0) {
+      replyMsg += `\n⚠️ ${docWarnings.join("；")}`;
+    }
     if (cleanupConfig?.notify && cleanupResult && (cleanupResult.deleted > 0 || cleanupResult.failed > 0)) {
       if (cleanupResult.failed > 0) {
         replyMsg += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档，${cleanupResult.failed} 个删除失败`;
@@ -602,20 +608,61 @@ export async function downloadFile(
 
 // ── 卡片构建 ─────────────────────────────────────────────────
 
-function buildMarkdownCard(markdown: string, warnings: string[] = []) {
+export interface CardBuildOptions {
+  /** 思考内容（完整），显示在可折叠区域 */
+  thinking?: string;
+  /** 思考进行中指示器（流式中间态） */
+  thinkingInProgress?: boolean;
+}
+
+/**
+ * 构建飞书卡片 JSON
+ *
+ * 支持可选的思考过程折叠区域：
+ * - thinkingInProgress: 流式中间态，显示"💭 思考中..."提示
+ * - thinking: 完成态，显示可折叠的思考过程
+ */
+export function buildMarkdownCard(markdown: string, warnings: string[] = [], options?: CardBuildOptions) {
   let content = markdown;
   if (warnings.length > 0) {
     content += formatWarnings(warnings);
   }
+
+  const elements: any[] = [];
+
+  // 思考过程区域
+  if (options?.thinkingInProgress) {
+    elements.push({ tag: "markdown", content: "💭 思考中..." });
+  } else if (options?.thinking) {
+    elements.push({
+      tag: "column_set",
+      flex_mode: "none",
+      background_style: "default",
+      columns: [{
+        tag: "column",
+        width: "weighted",
+        weight: 1,
+        elements: [{
+          tag: "markdown",
+          content: `💭 **思考过程**\n${options.thinking}`,
+        }],
+      }],
+      fold_flag: "fold",
+    });
+    elements.push({ tag: "hr" });
+  }
+
+  elements.push({ tag: "markdown", content });
+
   return {
     schema: "2.0",
-    body: { elements: [{ tag: "markdown", content }] },
+    body: { elements },
   };
 }
 
 // ── 云文档（超长消息写入）─────────────────────────────────────
 
-interface ReplyContext {
+export interface ReplyContext {
   profile: string;
   cwd: string;
   sessionId: string;
@@ -656,7 +703,7 @@ export async function createOverflowDocument(
   markdown: string,
   originalMessage: string,
   meta: DocumentMeta
-): Promise<{ docUrl: string; docId: string }> {
+): Promise<{ docUrl: string; docId: string; warnings: string[] }> {
   // 1. 将 markdown 转换为文档块
   const { items } = markdownToBlocks(markdown, originalMessage, meta);
 
@@ -676,11 +723,12 @@ export async function createOverflowDocument(
     throw new Error("Failed to create document");
   }
 
-  // 3. 严格保序写入
+  // 3. 严格保序写入（带容错）
   const BATCH_SIZE = 50;
   let simpleBatch: Block[] = [];
   let isFirstBatch = true;
   let batchIndex = 0;
+  const writeWarnings: string[] = [];
 
   const flushSimpleBatch = async () => {
     if (simpleBatch.length === 0) return;
@@ -692,9 +740,11 @@ export async function createOverflowDocument(
       await batchCreateBlocks(token, docId, simpleBatch, index);
       isFirstBatch = false;
     } catch (error) {
-      console.error(`[DOC] Batch ${batchIndex} failed, block types: [${batchTypes.join(", ")}]`);
-      console.error(`[DOC] First block: ${JSON.stringify(simpleBatch[0], null, 2).slice(0, 500)}`);
-      throw error;
+      const errMsg = `Batch ${batchIndex} 写入失败（${simpleBatch.length} 个块），已跳过`;
+      console.error(`[DOC] ${errMsg}:`, error);
+      console.error(`[DOC] Block types: [${batchTypes.join(", ")}]`);
+      writeWarnings.push(errMsg);
+      // 不抛出，继续后续处理
     } finally {
       simpleBatch = [];
     }
@@ -717,7 +767,22 @@ export async function createOverflowDocument(
           await createTableDescendants(token, docId, item.data);
         } catch (error) {
           console.error(`[DOC] Table descendants failed at item ${i}:`, error);
-          throw error;
+          // 降级为代码块：包含原始 Markdown 保留可读性
+          const tableInfo = item.data.tableBlock.table.property;
+          const rawMd = item.data.rawMarkdown ?? "";
+          writeWarnings.push(`表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列）`);
+          const fallbackContent = rawMd
+            ? `⚠️ 表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列），原始内容：\n${rawMd}`
+            : `⚠️ 表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列）`;
+          simpleBatch.push({
+            block_type: BlockType.CODE,
+            code: {
+              style: { language: 1, wrap: true },
+              elements: [{
+                text_run: { content: fallbackContent },
+              }],
+            },
+          });
         }
         break;
 
@@ -727,7 +792,15 @@ export async function createOverflowDocument(
           await createCalloutDescendants(token, docId, item.data);
         } catch (error) {
           console.error(`[DOC] Callout descendants failed at item ${i}:`, error);
-          throw error;
+          writeWarnings.push("高亮块渲染失败");
+          // 降级为普通引用块
+          const calloutTexts = item.data.contentDescendants
+            .map(d => d.text?.elements?.map(e => e.text_run?.content ?? "").join("") ?? "")
+            .filter(Boolean);
+          simpleBatch.push({
+            block_type: BlockType.QUOTE,
+            quote: { elements: [{ text_run: { content: calloutTexts.join("\n") } }] },
+          });
         }
         break;
     }
@@ -740,6 +813,7 @@ export async function createOverflowDocument(
   return {
     docUrl: `https://feishu.cn/docx/${docId}`,
     docId,
+    warnings: writeWarnings,
   };
 }
 
@@ -858,7 +932,14 @@ async function createCalloutDescendants(
  */
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-async function getTenantAccessToken(appId: string, appSecret: string): Promise<string> {
+/**
+ * 使缓存的 token 失效，下次调用 getTenantAccessToken 时强制刷新
+ */
+function invalidateTokenCache(): void {
+  cachedToken = null;
+}
+
+export async function getTenantAccessToken(appId: string, appSecret: string): Promise<string> {
   // 检查缓存
   if (cachedToken && cachedToken.expiresAt > Date.now()) {
     return cachedToken.token;

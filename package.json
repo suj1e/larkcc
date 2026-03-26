@@ -40,7 +40,7 @@
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && mkdir -p dist/commands && cp src/commands/default-prompts.yml dist/commands/",
+    "build": "tsc && mkdir -p dist/commands dist/resources && cp src/commands/default-prompts.yml dist/commands/ && cp resources/format-guide.md dist/resources/",
     "start": "node dist/index.js"
   },
   "dependencies": {
