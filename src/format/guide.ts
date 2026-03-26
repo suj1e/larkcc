@@ -15,6 +15,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { fileURLToPath } from "url";
+
+// ESM 兼容：__dirname 在 ESM 中不可用
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ── 内置默认格式指导（fallback）────────────────────────────────
 
