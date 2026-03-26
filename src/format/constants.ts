@@ -31,11 +31,13 @@ export const BlockType = {
   DIAGRAM: 21,    // 流程图/UML
   DIVIDER: 22,    // 分割线
   FILE: 23,       // 文件
-  TABLE: 24,      // 表格
-  TABLE_CELL: 25, // 表格单元格
-  IFRAME: 27,     // 内嵌网页
-  IMAGE: 28,      // 图片
-  VIEW: 29,       // 视图（容器块）
+  GRID: 24,       // 分栏（Grid）
+  GRID_COLUMN: 25,// 分栏列（GridColumn）
+  IFRAME: 26,     // 内嵌网页
+  IMAGE: 27,      // 图片
+  VIEW: 33,       // 视图（容器块）
+  TABLE: 31,      // 表格
+  TABLE_CELL: 32, // 表格单元格
 } as const;
 
 // 飞书高亮块颜色

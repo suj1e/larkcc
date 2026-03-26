@@ -329,3 +329,36 @@ export function isDivider(line: string): boolean {
   const trimmed = line.trim();
   return trimmed === "---" || trimmed === "***" || trimmed === "___";
 }
+
+// ── 表格计数 ───────────────────────────────────────────────────
+
+/**
+ * 统计 Markdown 中的表格数量（排除代码块内的伪表格）
+ * @param markdown Markdown 文本
+ * @returns 表格数量
+ */
+export function countTables(markdown: string): number {
+  // 1. 移除代码块，避免代码块内的 | 被误判
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  const inlineCodeRegex = /`[^`]+`/g;
+  const cleanMd = markdown
+    .replace(codeBlockRegex, '')
+    .replace(inlineCodeRegex, '');
+
+  // 2. 复用 parseTable 逻辑统计表格数量
+  const lines = cleanMd.split('\n');
+  let count = 0;
+  let i = 0;
+
+  while (i < lines.length) {
+    const result = parseTable(lines, i);
+    if (result) {
+      count++;
+      i = result.endIndex + 1;
+    } else {
+      i++;
+    }
+  }
+
+  return count;
+}

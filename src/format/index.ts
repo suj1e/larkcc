@@ -36,6 +36,7 @@ export {
   isBulletList,
   isOrderedList,
   isQuote,
+  countTables,
 } from "./parser.js";
 export type { TodoParseResult, EquationParseResult, CalloutParseResult } from "./parser.js";
 

@@ -34,6 +34,12 @@ export interface OverflowConfig {
   };
 }
 
+// 卡片表格限制配置
+export interface CardTableConfig {
+  max_tables_per_card: number;   // 单卡片最大表格数，默认 5
+  max_tables_split: number;      // 超过此数量写文档，默认 10
+}
+
 export interface ExecSecurity {
   enabled: boolean;              // 是否启用安全检查
   blacklist: string[];           // 黑名单关键词
@@ -63,6 +69,7 @@ export interface ProfileConfig {
 export interface LarkccConfig extends ProfileConfig {
   reaction?: ReactionConfig;
   thinking_words?: string[];
+  card_table?: CardTableConfig;
 }
 
 export interface RawConfig {
@@ -76,6 +83,7 @@ export interface RawConfig {
   exec_security?: ExecSecurity;  // EXEC 安全配置
   reaction?: ReactionConfig;     // reaction emoji 配置
   thinking_words?: string[];     // 思考状态词列表
+  card_table?: CardTableConfig;  // 卡片表格限制配置
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
 
@@ -129,6 +137,11 @@ const DEFAULT_REACTION: ReactionConfig = {
   processing: "Typing",
   done: "DONE",
   error: "OnIt",
+};
+
+const DEFAULT_CARD_TABLE: CardTableConfig = {
+  max_tables_per_card: 5,
+  max_tables_split: 10,
 };
 
 const DEFAULT_THINKING_WORDS: string[] = [
@@ -263,6 +276,10 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       error: raw.reaction?.error ?? DEFAULT_REACTION.error,
     },
     thinking_words: raw.thinking_words ?? DEFAULT_THINKING_WORDS,
+    card_table: {
+      max_tables_per_card: raw.card_table?.max_tables_per_card ?? DEFAULT_CARD_TABLE.max_tables_per_card,
+      max_tables_split: raw.card_table?.max_tables_split ?? DEFAULT_CARD_TABLE.max_tables_split,
+    },
   };
 }
 

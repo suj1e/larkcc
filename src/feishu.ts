@@ -2,8 +2,8 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { OverflowConfig } from "./config.js";
-import { sanitizeContent, formatWarnings, BlockType, LanguageMap, markdownToBlocks, DocumentMeta } from "./format/index.js";
+import { OverflowConfig, CardTableConfig } from "./config.js";
+import { sanitizeContent, formatWarnings, BlockType, LanguageMap, markdownToBlocks, DocumentMeta, countTables } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
 
@@ -121,6 +121,8 @@ export async function updateText(
 
 // 最终回复卡片，超长分段发送，卡片失败 fallback 到普通文本
 const CHUNK_SIZE = 2800;
+const DEFAULT_MAX_TABLES_PER_CARD = 5;
+const DEFAULT_MAX_TABLES_SPLIT = 10;
 
 function splitMarkdown(text: string, size: number): string[] {
   if (text.length <= size) return [text];
@@ -141,6 +143,91 @@ function splitMarkdown(text: string, size: number): string[] {
   return chunks;
 }
 
+/**
+ * 按表格数量拆分 Markdown
+ * 标题跟随其后的表格，保证表格不跨段
+ */
+function splitMarkdownByTables(markdown: string, maxTables: number): string[] {
+  const lines = markdown.split('\n');
+  const chunks: string[] = [];
+  let currentChunk: string[] = [];
+  let tableCount = 0;
+  let inTable = false;
+  let pendingHeading: string | null = null;
+
+  const isTableRow = (line: string): boolean => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('|') && trimmed.endsWith('|');
+  };
+
+  const isTableSeparator = (line: string): boolean => {
+    return /^\|[\s\-:|]+\|$/.test(line.trim());
+  };
+
+  const flushChunk = () => {
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join('\n'));
+      currentChunk = [];
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 检测标题（可能紧跟表格）
+    if (/^#{1,6}\s/.test(trimmed)) {
+      // 如果当前 chunk 已经满了，且不在表格中，先 flush
+      if (tableCount >= maxTables && !inTable) {
+        flushChunk();
+        tableCount = 0;
+      }
+      pendingHeading = line;
+      continue;
+    }
+
+    // 检测表格开始
+    if (isTableRow(trimmed) && !inTable) {
+      // 检查下一行是否是分隔符（确认是表格）
+      if (i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        // 如果当前 chunk 已满，先 flush
+        if (tableCount >= maxTables) {
+          flushChunk();
+          tableCount = 0;
+        }
+        // 添加待处理的标题
+        if (pendingHeading) {
+          currentChunk.push(pendingHeading);
+          pendingHeading = null;
+        }
+        inTable = true;
+        tableCount++;
+      }
+    }
+
+    // 添加待处理的标题（如果不是表格前的标题）
+    if (pendingHeading && !isTableRow(trimmed)) {
+      currentChunk.push(pendingHeading);
+      pendingHeading = null;
+    }
+
+    currentChunk.push(line);
+
+    // 检测表格结束
+    if (inTable && !isTableRow(trimmed) && !isTableSeparator(trimmed)) {
+      inTable = false;
+    }
+  }
+
+  // 处理剩余内容
+  if (pendingHeading) {
+    currentChunk.push(pendingHeading);
+  }
+  flushChunk();
+
+  return chunks;
+}
+
 export async function replyFinalCard(
   client: lark.Client,
   chatId: string,
@@ -151,6 +238,38 @@ export async function replyFinalCard(
   const threshold = context?.overflow.mode === "document"
     ? context.overflow.document.threshold
     : context?.overflow.chunk.threshold ?? CHUNK_SIZE;
+
+  // 统计表格数量
+  const tableCount = countTables(markdown);
+  const maxTablesPerCard = context?.card_table?.max_tables_per_card ?? DEFAULT_MAX_TABLES_PER_CARD;
+  const maxTablesSplit = context?.card_table?.max_tables_split ?? DEFAULT_MAX_TABLES_SPLIT;
+
+  // 表格数量超过阈值，写文档
+  if (tableCount > maxTablesSplit) {
+    if (context?.overflow.mode === "document") {
+      await replyWithDocument(client, chatId, rootMsgId, markdown, context);
+    } else {
+      // 没有 document 模式，回退到分片
+      await sendMessageChunk(client, rootMsgId, `⚠️ 表格数量过多（${tableCount} 个），建议使用 document 模式`);
+      const chunks = splitMarkdown(markdown, threshold);
+      for (let i = 0; i < chunks.length; i++) {
+        const content = chunks.length > 1
+          ? `**(${i + 1}/${chunks.length})**\n${chunks[i]}`
+          : chunks[i];
+        await sendMessageChunk(client, rootMsgId, content);
+      }
+    }
+    return;
+  }
+
+  // 表格数量需要拆分发送
+  if (tableCount > maxTablesPerCard) {
+    const chunks = splitMarkdownByTables(markdown, maxTablesPerCard);
+    for (const chunk of chunks) {
+      await sendMessageChunk(client, rootMsgId, chunk);
+    }
+    return;
+  }
 
   // 不超限，直接发送
   if (markdown.length <= threshold) {
@@ -504,6 +623,7 @@ interface ReplyContext {
   rootMsgId: string;
   appId: string;
   appSecret: string;
+  card_table?: CardTableConfig;
 }
 
 /**
