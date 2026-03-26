@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Card table limit handling for Feishu messages (max 5 tables per card)
+  - `countTables()` function to accurately count tables in markdown (excludes code blocks)
+  - `splitMarkdownByTables()` to split markdown by table boundaries
+  - `CardTableConfig` for configurable thresholds (`max_tables_per_card`, `max_tables_split`)
+  - Tables >10 auto-write to document, 6-10 split into multiple cards
+
+### Fixed
+
+- Correct BlockType enum values to match official Feishu API docs
+  - TABLE: 24 → 31
+  - TABLE_CELL: 25 → 32
+  - IFRAME: 27 → 26
+  - IMAGE: 28 → 27
+  - VIEW: 29 → 33
+  - Add GRID (24) and GRID_COLUMN (25)
+
 ## [0.3.0] - 2026-03-26
 
 ### Added
