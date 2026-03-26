@@ -120,6 +120,9 @@ export async function runAgent(
 
   // 创建流式卡片（如果配置启用）
   const streamingCard = createStreamingCard(config.streaming, client, rootMsgId, replyContext);
+  if (streamingCard) {
+    await streamingCard.start();
+  }
 
   // 构建格式指导 system prompt（追加到 Claude Code 默认 system prompt 后面）
   const systemPrompt = config.format_guide?.enabled !== false

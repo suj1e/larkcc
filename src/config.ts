@@ -172,9 +172,9 @@ const DEFAULT_FORMAT_GUIDE: FormatGuideConfig = {
 
 const DEFAULT_STREAMING: StreamingConfig = {
   enabled: true,
-  mode: "update",
+  mode: "cardkit",
   flush_interval_ms: 300,
-  thinking_enabled: false,
+  thinking_enabled: true,
   fallback_on_error: true,
 };
 

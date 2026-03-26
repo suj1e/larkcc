@@ -14,7 +14,7 @@ import { optimizeForCard } from "./format/card-optimize.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import type { StreamingConfig } from "./config.js";
 import type { ReplyContext } from "./feishu.js";
-import { replyFinalCard, buildMarkdownCard } from "./feishu.js";
+import { replyFinalCard, buildMarkdownCard, getTenantAccessToken } from "./feishu.js";
 import type { CardBuildOptions } from "./feishu.js";
 
 // ── CardKit API 常量 ──────────────────────────────────────────────
@@ -361,7 +361,9 @@ class UpdateStreamingCard implements IStreamingCard {
 
 class CardKitStreamingCard implements IStreamingCard {
   private client: lark.Client;
-  private token: string;
+  private appId: string;
+  private appSecret: string;
+  private token: string = "";
   private rootMsgId: string;
   private fallbackOnError: boolean;
   private thinkingEnabled: boolean;
@@ -374,7 +376,8 @@ class CardKitStreamingCard implements IStreamingCard {
 
   constructor(
     client: lark.Client,
-    token: string,
+    appId: string,
+    appSecret: string,
     rootMsgId: string,
     intervalMs: number,
     fallbackOnError: boolean,
@@ -382,7 +385,8 @@ class CardKitStreamingCard implements IStreamingCard {
     context: ReplyContext,
   ) {
     this.client = client;
-    this.token = token;
+    this.appId = appId;
+    this.appSecret = appSecret;
     this.rootMsgId = rootMsgId;
     this.fallbackOnError = fallbackOnError;
     this.thinkingEnabled = thinkingEnabled;
@@ -403,6 +407,9 @@ class CardKitStreamingCard implements IStreamingCard {
 
   async start(): Promise<void> {
     try {
+      // 0. Lazy 获取 tenant_access_token
+      this.token = await getTenantAccessToken(this.appId, this.appSecret);
+
       // 1. 创建 CardKit 卡片实体
       const cardConfig = {
         card_link: {
@@ -593,6 +600,55 @@ class CardKitStreamingCard implements IStreamingCard {
   }
 }
 
+// ── 降级包装器 ──────────────────────────────────────────────────
+
+/**
+ * FallbackStreamingCard：自动降级包装器
+ *
+ * 启动时先尝试 primary（CardKit），失败后自动切换到 fallback（Update）。
+ * 降级后所有操作透明委托给 fallback，调用方无需感知。
+ */
+class FallbackStreamingCard implements IStreamingCard {
+  private primary: IStreamingCard;
+  private fallback: IStreamingCard | null = null;
+
+  constructor(
+    primary: IStreamingCard,
+    private fallbackFactory: () => IStreamingCard,
+  ) {
+    this.primary = primary;
+  }
+
+  private get active(): IStreamingCard {
+    return this.fallback ?? this.primary;
+  }
+
+  async start(): Promise<void> {
+    await this.primary.start();
+    if (this.primary.isDisabled()) {
+      console.error("[STREAM] Primary streaming failed, activating fallback (update mode)");
+      this.fallback = this.fallbackFactory();
+      await this.fallback.start();
+    }
+  }
+
+  append(text: string): void {
+    this.active.append(text);
+  }
+
+  async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
+    await this.active.complete(finalContent, options);
+  }
+
+  async abort(message: string): Promise<void> {
+    await this.active.abort(message);
+  }
+
+  isDisabled(): boolean {
+    return this.active.isDisabled();
+  }
+}
+
 // ── 工厂函数 ─────────────────────────────────────────────────────
 
 /**
@@ -616,8 +672,17 @@ export function createStreamingCard(
   const thinkingEnabled = config.thinking_enabled === true;
 
   if (config.mode === "cardkit") {
-    console.error("[STREAM] CardKit mode requested, falling back to update mode (CardKit permissions not configured)");
-    return new CardKitStreamingCard(client, "", rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context);
+    const primary = new CardKitStreamingCard(
+      client, context.appId, context.appSecret,
+      rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context,
+    );
+    if (fallbackOnError) {
+      const fallbackFactory = () => new UpdateStreamingCard(
+        client, rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context,
+      );
+      return new FallbackStreamingCard(primary, fallbackFactory);
+    }
+    return primary;
   }
 
   // update 模式

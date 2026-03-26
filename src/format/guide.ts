@@ -139,9 +139,13 @@ function getUserGuidePath(): string {
   return path.join(os.homedir(), ".larkcc", "format-guide.md");
 }
 
-function getBundledGuidePath(): string {
-  // __dirname 是 src/format/，向上两级到项目根目录，再进入 resources/
-  return path.join(__dirname, "..", "..", "resources", "format-guide.md");
+function getBundledGuidePaths(): string[] {
+  return [
+    // 编译后 dist/format/guide.js → dist/resources/format-guide.md
+    path.join(__dirname, "..", "resources", "format-guide.md"),
+    // 开发时 src/format/guide.ts → resources/format-guide.md
+    path.join(__dirname, "..", "..", "resources", "format-guide.md"),
+  ];
 }
 
 // ── 加载函数 ───────────────────────────────────────────────────
@@ -169,18 +173,20 @@ function loadFormatGuideContent(): string {
     console.error(`[GUIDE] Failed to read user guide: ${error}`);
   }
 
-  // 2. 随项目发布的默认文件
-  const bundledPath = getBundledGuidePath();
-  try {
-    if (fs.existsSync(bundledPath)) {
-      const content = fs.readFileSync(bundledPath, "utf8").trim();
-      if (content) {
-        console.error(`[GUIDE] Loaded bundled format guide: ${bundledPath}`);
-        return content;
+  // 2. 随项目发布的默认文件（优先 dist/resources/，其次项目根 resources/）
+  const bundledPaths = getBundledGuidePaths();
+  for (const bundledPath of bundledPaths) {
+    try {
+      if (fs.existsSync(bundledPath)) {
+        const content = fs.readFileSync(bundledPath, "utf8").trim();
+        if (content) {
+          console.error(`[GUIDE] Loaded bundled format guide: ${bundledPath}`);
+          return content;
+        }
       }
+    } catch (error) {
+      console.error(`[GUIDE] Failed to read bundled guide ${bundledPath}: ${error}`);
     }
-  } catch (error) {
-    console.error(`[GUIDE] Failed to read bundled guide: ${error}`);
   }
 
   // 3. 内置默认
