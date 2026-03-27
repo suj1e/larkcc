@@ -20,6 +20,7 @@ import type { CardBuildOptions } from "./feishu.js";
 
 const LONG_GAP_MS = 2000;   // 2 秒无新内容，强制刷新
 const GAP_CHECK_INTERVAL = 500; // 每 500ms 检查一次长间隔
+const TRUNCATE_LIMIT = 4000;
 
 export interface FlushControllerOptions {
   /** 最小刷新间隔（毫秒） */
@@ -216,6 +217,7 @@ class UpdateStreamingCard implements IStreamingCard {
     try {
       const card: any = {
         schema: "2.0",
+        config: { wide_screen_mode: true },
         body: { elements: [{ tag: "markdown", content: "⏳ 思考中..." }] },
       };
       if (this.cardTitle) {
@@ -277,7 +279,7 @@ class UpdateStreamingCard implements IStreamingCard {
     if (!displayContent.trim()) return;
 
     const optimized = optimizeForCard(displayContent);
-    const truncated = optimized.length > 4000 ? optimized.slice(0, 4000) + "\n\n..." : optimized;
+    const truncated = optimized.length > TRUNCATE_LIMIT ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..." : optimized;
 
     const card = buildMarkdownCard(truncated, [], { ...cardOptions, cardTitle: this.cardTitle });
     await this.client.im.message.patch({

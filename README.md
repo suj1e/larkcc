@@ -320,7 +320,7 @@ setup 不需要填 open_id，发第一条消息自动保存。
 - 🎯 格式指导注入（从源头优化输出质量）
 - 🖼 图片理解（支持富文本多图）
 - 🧠 思考过程分离（可折叠显示 Claude 的推理过程）
-- ⏱ 响应元数据（耗时、token 数实时显示）
+- ⏱ 响应元数据（耗时、模型、token 数实时显示）
 - 🖼 外部图片自动上传（下载 → 飞书 → 渲染，支持卡片和文档）
 - ⌨️ Slash 命令
 - ⏹ `/stop` 中断任务
@@ -389,7 +389,7 @@ setup 不需要填 open_id，发第一条消息自动保存。
 streaming:
   enabled: true                # 是否启用流式（默认 true）
   mode: cardkit                # update（message.patch）| cardkit | none
-  flush_interval_ms: 300       # 最小刷新间隔（毫秒）
+  flush_interval_ms: 200       # 最小刷新间隔（毫秒）
   thinking_enabled: false      # 是否显示 Claude 思考过程
   fallback_on_error: true      # 失败时降级为一次性发送
 
@@ -410,7 +410,9 @@ image_resolver:
 | `none` | 禁用流式，等待完整输出后一次性发送 | 无 |
 
 - `cardkit` 模式为默认模式，采用单卡片架构（对齐飞书官方 OpenClaw 方案），全程只有一个消息
-- `cardkit` 模式下工具调用不可见（不打工具卡片），失败时自动降级为 `update`
+- `cardkit` 模式使用飞书 SDK CardKit 客户端（自动 token 管理、结构化错误处理）
+- `cardkit` 模式支持流式预览（summary）、工具状态栏实时展示、思考过程折叠、长内容自动溢出到云文档
+- `cardkit` 模式关闭流式采用两步操作（settings + update），对齐官方最佳实践
 - `update` 模式使用消息 patch API 模拟流式，会发送独立的工具调用卡片
 - 流式过程中如果内容超长，最终会自动写入云文档并回复链接
 
@@ -428,10 +430,10 @@ image_resolver:
 
 ### 响应元数据
 
-每条回复底部自动显示耗时和 token 用量：
+每条回复底部自动显示耗时、模型和 token 用量：
 
 ```
-⏱ 8.2s · 1,234 tokens
+⏱ 8.2s · claude-sonnet-4-6 · 1,234 tokens
 ```
 
 仅显示在卡片消息中，云文档不追加。

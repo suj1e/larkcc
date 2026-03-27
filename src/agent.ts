@@ -90,13 +90,7 @@ export interface ImageInput {
 /** SDK result 事件的类型定义 */
 interface SDKResultEvent {
   session_id?: string;
-  result?: {
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-    };
-    model?: string;
-  };
+  modelUsage?: Record<string, { inputTokens?: number; outputTokens?: number }>;
 }
 
 export async function runAgent(
@@ -129,8 +123,6 @@ export async function runAgent(
   if (isCardkitMode && !streamingCard) {
     cardkitCtrl = new CardKitController({
       client,
-      appId: replyContext.appId,
-      appSecret: replyContext.appSecret,
       rootMsgId,
       cardTitle: config.card_title ?? "Claude",
       thinkingEnabled: config.streaming?.thinking_enabled === true,
@@ -218,10 +210,13 @@ export async function runAgent(
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
-          // CardKit 模式：不发工具卡片（单卡片架构）
+          // CardKit 模式：更新状态栏，不发工具卡片
           if (isCardkitMode) {
             if (SILENT_TOOLS.has(block.name)) break;
-            logger.tool(block.name, formatInput(block.name, block.input ?? {}));
+            const label = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
+            const detail = formatInput(block.name, block.input ?? {});
+            logger.tool(block.name, detail);
+            await cardkitCtrl?.updateStatus(`🔄 ${label} ${detail}`);
             break;
           }
           if (SILENT_TOOLS.has(block.name)) break;
@@ -248,6 +243,11 @@ export async function runAgent(
       }>;
       for (const block of blocks) {
         if (block.type === "tool_result" && block.tool_use_id) {
+          // CardKit 模式：清除工具状态
+          if (isCardkitMode) {
+            cardkitCtrl?.clearStatus();
+            break;
+          }
           const toolInfo = toolMsgMap.get(block.tool_use_id);
           if (toolInfo) {
             const raw = typeof block.content === "string"
@@ -271,11 +271,21 @@ export async function runAgent(
         const elapsedSeconds = (Date.now() - startTime) / 1000;
 
         // 尝试从 SDK result 中提取 token 和 model 信息
-        const usage = resultEvent.result?.usage;
-        const tokens = usage
-          ? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
-          : undefined;
-        const model = resultEvent.result?.model;
+        // model 信息在 modelUsage 的 key 中，取使用最多 token 的 model
+        const modelUsage = resultEvent.modelUsage;
+        let model: string | undefined;
+        let tokens: number | undefined;
+        if (modelUsage) {
+          let maxTokens = 0;
+          for (const [modelName, usage] of Object.entries(modelUsage)) {
+            const total = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+            if (total > maxTokens) {
+              maxTokens = total;
+              model = modelName;
+            }
+          }
+          tokens = maxTokens || undefined;
+        }
 
         // 解析 thinking
         const thinkingEnabled = config.streaming?.thinking_enabled === true;

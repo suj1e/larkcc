@@ -3,113 +3,67 @@
  *
  * 单卡片架构，对齐飞书官方 OpenClaw 方案。
  * 全程只有一个卡片消息，通过 CardKit API 实现打字机效果。
- * 工具调用不可见，thinking 和最终回答在同一卡片内展示。
+ * 工具调用状态、thinking 和最终回答在同一卡片内展示。
  *
  * API 调用链参考飞书官方 openclaw-lark 项目：
  * https://github.com/larksuite/openclaw-lark
  *
  * 状态机：idle → creating → streaming → completed / aborted
  *
- * API 调用链（对齐官方 SDK）：
- * 1. POST /cardkit/v1/cards              → 创建卡片实体
- * 2. im.message.reply({ card_id })       → 发送消息引用卡片
- * 3. PUT  /cardkit/v1/cards/{id}/elements/{eid}/content  → 流式打字机
- * 4. PUT  /cardkit/v1/cards/{id}         → 最终更新（关闭 streaming_mode）
+ * API 调用链（使用 SDK CardKit 客户端）：
+ * 1. client.cardkit.v1.card.create()   → 创建卡片实体
+ * 2. im.message.reply({ card_id })     → 发送消息引用卡片
+ * 3. client.cardkit.v1.cardElement.content()  → 流式打字机
+ * 4. client.cardkit.v1.card.settings() → 关闭 streaming_mode
+ * 5. client.cardkit.v1.card.update()   → 最终更新卡片内容
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard } from "./format/card-optimize.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
-import { replyFinalCard, getTenantAccessToken } from "./feishu.js";
+import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument } from "./feishu.js";
 import type { ReplyContext } from "./feishu.js";
 import type { CompleteOptions, FlushControllerOptions } from "./streaming.js";
+import { FlushController } from "./streaming.js";
+import { countTables } from "./format/index.js";
 
-// ── API 常量 ──────────────────────────────────────────────────
+// ── 常量 ──────────────────────────────────────────────────
 
-const CARDKIT_BASE = "https://open.feishu.cn/open-apis/cardkit/v1";
+const TRUNCATE_LIMIT = 4000;
+const THINKING_OVERFLOW_TRUNCATE = 500;
 
 // ── 状态机 ──────────────────────────────────────────────────
 
 type Phase = "idle" | "creating" | "streaming" | "completed" | "aborted";
 
-// ── FlushController（从 streaming.ts 导入的接口） ─────────────
+// ── CardKit API 错误 ──────────────────────────────────────
+
+class CardKitApiError extends Error {
+  readonly code: number;
+
+  constructor(code: number, msg: string, context: string) {
+    super(`${context} failed (${code}): ${msg}`);
+    this.name = "CardKitApiError";
+    this.code = code;
+  }
+
+  get isRateLimit(): boolean {
+    return this.code === 230020;
+  }
+
+  get isTableLimit(): boolean {
+    return this.code === 230099 || this.code === 11310;
+  }
+}
 
 /**
- * 刷新控制器接口，与 streaming.ts 中的 FlushController 对齐。
- * CardKit 模式内部创建实例，避免跨模块耦合。
+ * 检查 SDK 响应中的错误码，返回 CardKitApiError 或 null
  */
-class FlushController {
-  private buffer = "";
-  private sentLength = 0;
-  private flushing = false;
-  private stopped = false;
-  private lastFlushTime = 0;
-  private lastAppendTime = 0;
-  private minIntervalMs: number;
-  private onFlush: (content: string) => Promise<void>;
-  private onError?: (error: unknown) => void;
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
-  private gapCheckTimer: ReturnType<typeof setInterval> | null = null;
-
-  private static readonly LONG_GAP_MS = 2000;
-  private static readonly GAP_CHECK_INTERVAL = 500;
-
-  constructor(options: FlushControllerOptions) {
-    this.minIntervalMs = options.minIntervalMs;
-    this.onFlush = options.onFlush;
-    this.onError = options.onError;
+function checkCardKitError(response: any, context: string): CardKitApiError | null {
+  if (response?.code !== undefined && response.code !== 0) {
+    return new CardKitApiError(response.code, response.msg ?? "unknown", context);
   }
-
-  append(text: string): void {
-    if (this.stopped) return;
-    this.buffer += text;
-    this.lastAppendTime = Date.now();
-    this.scheduleFlush();
-  }
-
-  start(): void {
-    this.lastAppendTime = Date.now();
-    this.lastFlushTime = Date.now();
-    this.gapCheckTimer = setInterval(() => this.checkLongGap(), FlushController.GAP_CHECK_INTERVAL);
-  }
-
-  stop(): void {
-    this.stopped = true;
-    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
-    if (this.gapCheckTimer) { clearInterval(this.gapCheckTimer); this.gapCheckTimer = null; }
-  }
-
-  private scheduleFlush(): void {
-    if (this.flushTimer || this.stopped) return;
-    const elapsed = Date.now() - this.lastFlushTime;
-    const delay = Math.max(0, this.minIntervalMs - elapsed);
-    this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.doFlush(); }, delay);
-  }
-
-  private async doFlush(): Promise<void> {
-    if (this.flushing || this.stopped) return;
-    if (this.buffer.length <= this.sentLength) return;
-    this.flushing = true;
-    try {
-      await this.onFlush(this.buffer);
-      this.sentLength = this.buffer.length;
-      this.lastFlushTime = Date.now();
-    } catch (error) {
-      if (this.onError) this.onError(error);
-      this.stop();
-      return;
-    } finally {
-      this.flushing = false;
-    }
-    if (!this.stopped && this.buffer.length > this.sentLength) this.scheduleFlush();
-  }
-
-  private checkLongGap(): void {
-    if (this.stopped || this.flushing) return;
-    if (Date.now() - this.lastAppendTime > FlushController.LONG_GAP_MS) {
-      if (this.buffer.length > this.sentLength) void this.doFlush();
-    }
-  }
+  return null;
 }
 
 // ── 控制器 ──────────────────────────────────────────────────
@@ -117,24 +71,21 @@ class FlushController {
 export class CardKitController {
   private phase: Phase = "idle";
   private client: lark.Client;
-  private appId: string;
-  private appSecret: string;
   private rootMsgId: string;
   private cardTitle: string;
   private thinkingEnabled: boolean;
   private context: ReplyContext;
 
-  private token = "";
   private cardId: string | null = null;
   private readonly streamElementId = "streaming_content";
+  private readonly statusElementId = "status_bar";
   private sequence = 0;
+  private statusActive = false;
 
   private flushCtrl: FlushController;
 
   constructor(params: {
     client: lark.Client;
-    appId: string;
-    appSecret: string;
     rootMsgId: string;
     cardTitle: string;
     thinkingEnabled: boolean;
@@ -142,8 +93,6 @@ export class CardKitController {
     intervalMs: number;
   }) {
     this.client = params.client;
-    this.appId = params.appId;
-    this.appSecret = params.appSecret;
     this.rootMsgId = params.rootMsgId;
     this.cardTitle = params.cardTitle;
     this.thinkingEnabled = params.thinkingEnabled;
@@ -174,60 +123,84 @@ export class CardKitController {
   }
 
   /**
-   * 完成：写入最终内容，关闭流式模式
+   * 清除工具状态栏（仅在状态栏有内容时才发 API）
+   */
+  async clearStatus(): Promise<void> {
+    if (!this.statusActive) return;
+    await this.updateStatus("");
+  }
+
+  async updateStatus(text: string): Promise<void> {
+    if (this.phase !== "streaming" || !this.cardId) return;
+    this.statusActive = text.length > 0;
+    this.sequence++;
+    try {
+      const res = await this.client.cardkit.v1.cardElement.content({
+        path: { card_id: this.cardId!, element_id: this.statusElementId },
+        data: { content: text, sequence: this.sequence },
+      });
+      const err = checkCardKitError(res, "Status update");
+      if (err) console.error(`[CARDKIT] ${err.message}`);
+    } catch (error) {
+      console.error("[CARDKIT] Status update error:", error);
+    }
+  }
+
+  /**
+   * 完成：关闭 streaming_mode，写入最终内容
    */
   async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
-    if (this.phase === "completed" || this.phase === "aborted") return;
+    if (this.phase === "completed") return;
 
     this.flushCtrl.stop();
+    this.statusActive = false;
 
-    // 卡片未创建成功，降级为普通消息
-    if (!this.cardId) {
+    // 卡片未创建成功或创建失败，降级为普通消息
+    if (!this.cardId || this.phase === "aborted") {
+      this.phase = "completed";
+      const fallbackOptions = { ...options, metadata: this.appendFallbackHint(options?.metadata) };
       await replyFinalCard(
         this.client, this.context.chatId, this.rootMsgId,
-        finalContent, this.context, options,
+        finalContent, this.context, fallbackOptions,
       );
-      this.phase = "completed";
       return;
     }
 
-    // 构建最终内容
+    // 构建最终内容（含 metadata）
     let content = finalContent;
     if (options?.metadata) {
       content += `\n\n---\n${options.metadata}`;
     }
-    const optimized = optimizeForCard(content);
 
-    // 构建 thinking 可折叠区域
-    const extraElements: any[] = [];
-    if (options?.thinking) {
-      extraElements.push({
-        tag: "column_set",
-        flex_mode: "none",
-        background_style: "default",
-        columns: [{
-          tag: "column",
-          width: "weighted",
-          weight: 1,
-          elements: [{
-            tag: "markdown",
-            content: `💭 **思考过程**\n${options.thinking}`,
-          }],
-        }],
-        fold_flag: "fold",
-      });
-      extraElements.push({ tag: "hr" });
+    // ── 溢出检查（在 optimizeForCard 之前，避免溢出路径的无用计算） ──
+    const threshold = this.context.overflow.document.threshold;
+    const tableCount = countTables(finalContent);
+    const maxTables = this.context.card_table?.max_tables_per_card ?? 5;
+
+    if (content.length > threshold || tableCount > maxTables) {
+      await this.handleOverflow(finalContent, options);
+      this.phase = "completed";
+      return;
     }
 
+    // ── 正常完成：两步关闭（对齐 openclaw-lark） ──
+    const optimized = optimizeForCard(content);
+    const extraElements = this.buildThinkingElements(options?.thinking);
     try {
-      const finalCardJson = this.buildFinalCard(optimized, extraElements);
+      // Step 1: 关闭 streaming_mode
       this.sequence++;
+      await this.closeStreamingMode();
+
+      // Step 2: 更新最终卡片内容
+      this.sequence++;
+      const finalCardJson = this.buildFinalCard(optimized, extraElements);
       await this.updateCard(finalCardJson);
     } catch (error) {
       console.error("[CARDKIT] Final update failed, sending as new message:", error);
+      const fallbackOptions = { ...options, metadata: this.appendFallbackHint(options?.metadata) };
       await replyFinalCard(
         this.client, this.context.chatId, this.rootMsgId,
-        finalContent, this.context, options,
+        finalContent, this.context, fallbackOptions,
       );
     }
 
@@ -249,6 +222,8 @@ export class CardKitController {
     try {
       const abortCardJson = this.buildFinalCard(optimized);
       this.sequence++;
+      await this.closeStreamingMode();
+      this.sequence++;
       await this.updateCard(abortCardJson);
     } catch (error) {
       console.error("[CARDKIT] Abort update failed:", error);
@@ -262,12 +237,19 @@ export class CardKitController {
     return this.phase === "aborted" && !this.cardId;
   }
 
+  /**
+   * 在现有 metadata 后追加降级提示
+   */
+  private appendFallbackHint(existing?: string): string {
+    const hint = "⚠️ 卡片模式不可用，已降级为普通消息";
+    return existing ? `${existing}\n${hint}` : hint;
+  }
+
   // ── 卡片创建（懒触发） ────────────────────────────────────
 
   private async ensureCardCreated(): Promise<void> {
     if (this.phase === "streaming") return;
     if (this.phase === "creating") {
-      // 等待并发创建完成
       while (this.phase === "creating") {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -287,23 +269,40 @@ export class CardKitController {
   }
 
   /**
-   * 创建 CardKit 卡片实体
+   * 创建 CardKit 卡片实体（使用 SDK）
    *
-   * POST /cardkit/v1/cards
-   * body: { type: "card_json", data: "<JSON 2.0 string>" }
+   * 对齐 openclaw-lark：
+   * - config: streaming_mode, wide_screen_mode, update_multi
+   * - summary: 对象格式 { content, i18n_content }
    */
   private async createCardEntity(): Promise<void> {
-    this.token = await getTenantAccessToken(this.appId, this.appSecret);
-
     const cardJson: any = {
       schema: "2.0",
-      config: { streaming_mode: true },
+      config: {
+        streaming_mode: true,
+        wide_screen_mode: true,
+        update_multi: true,
+      },
+      summary: {
+        content: "思考中...",
+        i18n_content: {
+          zh_cn: "思考中...",
+          en_us: "Thinking...",
+        },
+      },
       body: {
-        elements: [{
-          tag: "markdown",
-          content: "⏳ 思考中...",
-          element_id: this.streamElementId,
-        }],
+        elements: [
+          {
+            tag: "markdown",
+            content: "",
+            element_id: this.statusElementId,
+          },
+          {
+            tag: "markdown",
+            content: "⏳ 思考中...",
+            element_id: this.streamElementId,
+          },
+        ],
       },
     };
 
@@ -314,28 +313,23 @@ export class CardKitController {
       };
     }
 
-    const res = await fetch(`${CARDKIT_BASE}/cards`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await this.client.cardkit.v1.card.create({
+      data: {
         type: "card_json",
         data: JSON.stringify(cardJson),
-      }),
+      },
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[CARDKIT] Create card failed: ${res.status} ${errText.slice(0, 200)}`);
-      throw new Error(`CardKit create failed: ${res.status}`);
+    const err = checkCardKitError(res, "Create card");
+    if (err) {
+      console.error(`[CARDKIT] ${err.message}`);
+      throw err;
     }
 
-    const data = await res.json() as any;
-    this.cardId = data.data?.card_id;
+    this.cardId = (res as any).data?.card_id;
 
     if (!this.cardId) {
+      console.error(`[CARDKIT] Create card response: ${JSON.stringify(res).slice(0, 500)}`);
       throw new Error("CardKit: no card_id in response");
     }
 
@@ -344,8 +338,6 @@ export class CardKitController {
 
   /**
    * 通过 IM 消息 API 发送卡片到聊天
-   *
-   * content: { type: "card", data: { card_id: "..." } }
    */
   private async sendCardMessage(): Promise<void> {
     await (this.client.im.message as any).reply({
@@ -360,10 +352,7 @@ export class CardKitController {
   // ── 流式更新 ──────────────────────────────────────────────
 
   /**
-   * 刷新卡片内容（打字机效果）
-   *
-   * PUT /cardkit/v1/cards/{id}/elements/{element_id}/content
-   * body: { content, sequence }
+   * 刷新卡片内容（打字机效果，使用 SDK）
    */
   private async performFlush(content: string): Promise<void> {
     if (this.phase !== "streaming" || !this.cardId) return;
@@ -381,65 +370,121 @@ export class CardKitController {
     if (!displayContent.trim()) return;
 
     const optimized = optimizeForCard(displayContent);
-    const truncated = optimized.length > 4000 ? optimized.slice(0, 4000) + "\n\n..." : optimized;
+    const truncated = optimized.length > TRUNCATE_LIMIT
+      ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
+      : optimized;
 
     this.sequence++;
-    const res = await fetch(
-      `${CARDKIT_BASE}/cards/${this.cardId}/elements/${this.streamElementId}/content`,
-      {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          content: truncated,
-          sequence: this.sequence,
-        }),
-      },
-    );
+    const res = await this.client.cardkit.v1.cardElement.content({
+      path: { card_id: this.cardId!, element_id: this.streamElementId },
+      data: { content: truncated, sequence: this.sequence },
+    });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[CARDKIT] Stream update failed: ${res.status} ${errText.slice(0, 200)}`);
-      throw new Error(`CardKit stream update failed: ${res.status}`);
+    const err = checkCardKitError(res, "Stream update");
+    if (err) {
+      console.error(`[CARDKIT] ${err.message}`);
+      throw err;
     }
   }
 
-  // ── 卡片更新 ──────────────────────────────────────────────
+  // ── 溢出处理 ──────────────────────────────────────────────
 
   /**
-   * 更新整个卡片
-   *
-   * PUT /cardkit/v1/cards/{id}
-   * body: { card: { type: "card_json", data: "<JSON>" }, sequence }
+   * 内容溢出时写入云文档，卡片显示文档链接
    */
-  private async updateCard(cardJson: any): Promise<void> {
-    const res = await fetch(`${CARDKIT_BASE}/cards/${this.cardId}`, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${this.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        card: { type: "card_json", data: JSON.stringify(cardJson) },
+  private async handleOverflow(
+    rawContent: string,
+    options?: CompleteOptions,
+  ): Promise<void> {
+    try {
+      const { token, title, originalMessage, meta } = await prepareOverflowContext(
+        this.client, this.rootMsgId, this.context,
+      );
+
+      const { docUrl, docId } = await createOverflowDocument(token, title, rawContent, originalMessage, meta);
+      registerDocument(docId, this.context.profile);
+
+      let cardContent = `📝 内容较长，已写入云文档：[${title}](${docUrl})`;
+      if (options?.metadata) {
+        cardContent += `\n\n---\n${options.metadata}`;
+      }
+
+      const extraElements = this.buildThinkingElements(options?.thinking);
+      const finalCardJson = this.buildFinalCard(cardContent, extraElements);
+
+      // 两步关闭
+      this.sequence++;
+      await this.closeStreamingMode();
+      this.sequence++;
+      await this.updateCard(finalCardJson);
+    } catch (error) {
+      console.error("[CARDKIT] Overflow document failed, truncating:", error);
+      const optimized = optimizeForCard(rawContent);
+      const truncated = optimized.length > TRUNCATE_LIMIT
+        ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
+        : optimized;
+      const finalCardJson = this.buildFinalCard(truncated);
+      this.sequence++;
+      await this.closeStreamingMode();
+      this.sequence++;
+      await this.updateCard(finalCardJson);
+    }
+  }
+
+  // ── CardKit API helpers（使用 SDK） ──────────────────────
+
+  /**
+   * 关闭 streaming_mode（对齐 openclaw-lark 两步关闭的第一步）
+   *
+   * PUT /cardkit/v1/cards/{id}/settings
+   * body: { settings: JSON.stringify({ streaming_mode: false }) }
+   */
+  private async closeStreamingMode(): Promise<void> {
+    const res = await this.client.cardkit.v1.card.settings({
+      path: { card_id: this.cardId! },
+      data: {
+        settings: JSON.stringify({ streaming_mode: false }),
         sequence: this.sequence,
-      }),
+      },
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[CARDKIT] Card update failed: ${res.status} ${errText.slice(0, 200)}`);
-      throw new Error(`CardKit card update failed: ${res.status}`);
+    const err = checkCardKitError(res, "Close streaming");
+    if (err) console.error(`[CARDKIT] ${err.message}`);
+  }
+
+  /**
+   * 更新整个卡片内容（使用 SDK）
+   *
+   * PUT /cardkit/v1/cards/{id}
+   * body: { card: { type: "card_json", data: "<JSON string>" }, sequence }
+   */
+  private async updateCard(cardJson: any): Promise<void> {
+    const res = await this.client.cardkit.v1.card.update({
+      path: { card_id: this.cardId! },
+      data: {
+        card: { type: "card_json", data: JSON.stringify(cardJson) },
+        sequence: this.sequence,
+      },
+    });
+
+    const err = checkCardKitError(res, "Card update");
+    if (err) {
+      console.error(`[CARDKIT] ${err.message}`);
+      throw err;
     }
   }
 
   // ── 卡片构建 ──────────────────────────────────────────────
 
+  /**
+   * 构建最终卡片 JSON（不包含 status_bar）
+   */
   private buildFinalCard(content: string, extraElements?: any[]): any {
     const cardJson: any = {
       schema: "2.0",
-      config: { streaming_mode: false },
+      config: {
+        wide_screen_mode: true,
+      },
       body: {
         elements: [
           ...(extraElements ?? []),
@@ -461,4 +506,35 @@ export class CardKitController {
 
     return cardJson;
   }
+
+  /**
+   * 构建 thinking 可折叠区域
+   */
+  private buildThinkingElements(thinking?: string): any[] {
+    if (!thinking) return [];
+
+    const truncatedThinking = thinking.length > THINKING_OVERFLOW_TRUNCATE
+      ? thinking.slice(0, THINKING_OVERFLOW_TRUNCATE) + "\n..."
+      : thinking;
+
+    return [
+      {
+        tag: "column_set",
+        flex_mode: "none",
+        background_style: "default",
+        columns: [{
+          tag: "column",
+          width: "weighted",
+          weight: 1,
+          elements: [{
+            tag: "markdown",
+            content: `💭 **思考过程**\n${truncatedThinking}`,
+          }],
+        }],
+        fold_flag: "fold",
+      },
+      { tag: "hr" },
+    ];
+  }
+
 }

@@ -12,8 +12,8 @@ importers:
         specifier: latest
         version: 0.2.74(zod@4.3.6)
       '@larksuiteoapi/node-sdk':
-        specifier: ^1
-        version: 1.59.0
+        specifier: ^1.60
+        version: 1.60.0
       chalk:
         specifier: ^5
         version: 5.6.2
@@ -306,8 +306,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@larksuiteoapi/node-sdk@1.59.0':
-    resolution: {integrity: sha512-sBpkruTvZDOxnVtoTbepWKRX0j1Y1ZElQYu0x7+v088sI9pcpbVp6ZzCGn62dhrKPatzNyCJyzYCPXPYQWccrA==}
+  '@larksuiteoapi/node-sdk@1.60.0':
+    resolution: {integrity: sha512-MS1eXx7K6HHIyIcCBkJLb21okoa8ZatUGQWZaCCUePm6a37RWFmT6ZKlKvHxAanSX26wNuNlwP0RhgscsE+T6g==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -769,7 +769,7 @@ snapshots:
   '@img/sharp-win32-x64@0.34.5':
     optional: true
 
-  '@larksuiteoapi/node-sdk@1.59.0':
+  '@larksuiteoapi/node-sdk@1.60.0':
     dependencies:
       axios: 1.13.6
       lodash.identity: 3.0.0

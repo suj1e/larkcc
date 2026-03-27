@@ -42,7 +42,7 @@ function saveDocRegistry(profile: string, records: DocumentRecord[]): void {
   fs.writeFileSync(filePath, JSON.stringify(records, null, 2), "utf8");
 }
 
-function registerDocument(docId: string, profile: string): void {
+export function registerDocument(docId: string, profile: string): void {
   const records = loadDocRegistry(profile);
   records.push({
     id: docId,
@@ -328,6 +328,51 @@ async function sendMessageChunk(
   }
 }
 
+/**
+ * 准备溢出文档所需的上下文（标题、原始消息、元信息）
+ */
+export async function prepareOverflowContext(
+  client: lark.Client,
+  rootMsgId: string,
+  context: ReplyContext,
+): Promise<{ token: string; title: string; originalMessage: string; meta: DocumentMeta }> {
+  // 仅当缓存 token 剩余不足 10 分钟时才刷新，避免不必要的 HTTP 调用
+  if (cachedToken && cachedToken.expiresAt - Date.now() < 600_000) {
+    cachedToken = null;
+  }
+  const token = await getTenantAccessToken(context.appId, context.appSecret);
+
+  const now = new Date();
+  const datetime = now.toISOString().replace("T", " ").slice(0, 19);
+  const title = context.overflow.document.title_template
+    .replace("{profile}", context.profile)
+    .replace("{cwd}", context.cwd)
+    .replace("{session_id}", context.sessionId ?? "")
+    .replace("{datetime}", datetime)
+    .replace("{date}", datetime.slice(0, 10));
+
+  let originalMessage = "";
+  try {
+    const msgRes = await client.im.message.get({
+      path: { message_id: rootMsgId },
+    });
+    const msgData = msgRes.data as any;
+    if (msgData?.items?.[0]?.body?.content) {
+      const content = JSON.parse(msgData.items[0].body.content);
+      originalMessage = content.text || "";
+    }
+  } catch { /* ignore */ }
+
+  const meta: DocumentMeta = {
+    cwd: context.cwd,
+    profile: context.profile,
+    sessionId: context.sessionId ?? "",
+    datetime,
+  };
+
+  return { token, title, originalMessage, meta };
+}
+
 async function replyWithDocument(
   client: lark.Client,
   chatId: string,
@@ -336,35 +381,7 @@ async function replyWithDocument(
   context: ReplyContext
 ): Promise<void> {
   try {
-    // 获取 tenant_access_token（强制刷新，避免长文档写入中途过期）
-    invalidateTokenCache();
-    const token = await getTenantAccessToken(context.appId, context.appSecret);
-
-    // 构建文档标题
-    const now = new Date();
-    const datetime = now.toISOString().replace("T", " ").slice(0, 19);
-    const title = context.overflow.document.title_template
-      .replace("{profile}", context.profile)
-      .replace("{cwd}", context.cwd)
-      .replace("{session_id}", context.sessionId ?? "")
-      .replace("{datetime}", datetime)
-      .replace("{date}", datetime.slice(0, 10));
-
-    // 获取用户原始消息内容
-    let originalMessage = "";
-    try {
-      const msgRes = await client.im.message.get({
-        path: { message_id: rootMsgId },
-      });
-      const msgData = msgRes.data as any;
-      // 提取消息文本内容
-      if (msgData?.items?.[0]?.body?.content) {
-        const content = JSON.parse(msgData.items[0].body.content);
-        originalMessage = content.text || "";
-      }
-    } catch {
-      // 获取失败时忽略
-    }
+    const { token, title, originalMessage, meta } = await prepareOverflowContext(client, rootMsgId, context);
 
     // 清理旧文档（如果启用）
     let cleanupResult: { deleted: number; failed: number } | null = null;
@@ -372,14 +389,6 @@ async function replyWithDocument(
     if (cleanupConfig?.enabled) {
       cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs, context.profile);
     }
-
-    // 构建文档元信息
-    const meta: DocumentMeta = {
-      cwd: context.cwd,
-      profile: context.profile,
-      sessionId: context.sessionId ?? "",
-      datetime: datetime,
-    };
 
     // 创建文档（在应用云空间）
     const { docUrl, docId, warnings: docWarnings } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
@@ -676,6 +685,7 @@ export function buildMarkdownCard(markdown: string, warnings: string[] = [], opt
 
   const card: any = {
     schema: "2.0",
+    config: { wide_screen_mode: true },
     body: { elements },
   };
 
@@ -964,7 +974,7 @@ let cachedToken: { token: string; expiresAt: number } | null = null;
 /**
  * 使缓存的 token 失效，下次调用 getTenantAccessToken 时强制刷新
  */
-function invalidateTokenCache(): void {
+export function invalidateTokenCache(): void {
   cachedToken = null;
 }
 
