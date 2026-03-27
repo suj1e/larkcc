@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Thinking block not captured (SDK sends `type: "thinking"` blocks, code only handled text/tool_use)
+- Abort not updating card (abort handler inside event loop, never reached when SDK exits)
+- Tool status not displaying when no text content yet (`updateStatus` didn't trigger card creation or flush)
 - Bottom model name not showing in card footer (extracted from `modelUsage` keys instead of non-existent `result.model`)
 - CardKit status bar visibility (empty initial content prevented element rendering)
 - Sequence number conflicts between concurrent `updateStatus` and `performFlush` calls
@@ -33,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CardKit constructor no longer accepts `appId`/`appSecret` params (SDK handles token management)
 - `@larksuiteoapi/node-sdk` upgraded from `^1` to `^1.60`
 - Default `flush_interval_ms` changed from 300 to 200
-- npm registry set to npmmirror
+- `/stop` now provides full abort feedback: signal received notification + success/failure message + distinct reaction
 
 ### Refactored
 

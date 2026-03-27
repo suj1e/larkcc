@@ -666,16 +666,24 @@ export async function startApp(
             }
           }
 
-          await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
+          const result = await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },
             }).catch(() => {});
           }
-          await client.im.messageReaction.create({
-            path: { message_id: msg.message_id },
-            data: { reaction_type: { emoji_type: config.reaction?.done ?? "DONE" } },
-          }).catch(() => {});
+          if (result === "aborted") {
+            await sendText(client, chatId, "✅ 已中断");
+            await client.im.messageReaction.create({
+              path: { message_id: msg.message_id },
+              data: { reaction_type: { emoji_type: config.reaction?.error ?? "OnIt" } },
+            }).catch(() => {});
+          } else {
+            await client.im.messageReaction.create({
+              path: { message_id: msg.message_id },
+              data: { reaction_type: { emoji_type: config.reaction?.done ?? "DONE" } },
+            }).catch(() => {});
+          }
         } catch (err) {
           logger.error(`Agent error: ${String(err)}`);
           await sendText(client, chatId, `❌ 出错了：${String(err)}`);

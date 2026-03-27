@@ -94,6 +94,8 @@ interface SDKResultEvent {
   modelUsage?: Record<string, { inputTokens?: number; outputTokens?: number }>;
 }
 
+export type RunAgentResult = "completed" | "aborted";
+
 export async function runAgent(
   prompt: string,
   cwd: string,
@@ -104,7 +106,7 @@ export async function runAgent(
   images?: ImageInput[],
   abortSignal?: AbortSignal,   // 可选中断信号
   profile?: string              // 机器人配置名
-): Promise<void> {
+): Promise<RunAgentResult> {
   const sessionId = getSession();
   const startTime = Date.now();
 
@@ -357,15 +359,19 @@ export async function runAgent(
     // 循环外统一处理 abort（覆盖 SDK 抛异常或正常退出的情况）
     if (abortSignal?.aborted) {
       await handleAbort("Agent aborted by user");
+      return "aborted";
     }
   } catch (err) {
     if (abortSignal?.aborted) {
       await handleAbort("Agent aborted (SDK threw)");
+      return "aborted";
     } else {
       console.error(`[query error]:`, err);
       throw err;
     }
   }
+
+  return "completed";
 }
 
 export function ensureEnv(): void {
