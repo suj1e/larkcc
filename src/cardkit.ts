@@ -3,7 +3,7 @@
  *
  * 单卡片架构，对齐飞书官方 OpenClaw 方案。
  * 全程只有一个卡片消息，通过 CardKit API 实现打字机效果。
- * 工具调用状态、thinking 和最终回答在同一卡片内展示。
+ * 工具调用状态作为前缀拼接在流式内容中，thinking 和最终回答在同一卡片内展示。
  *
  * API 调用链参考飞书官方 openclaw-lark 项目：
  * https://github.com/larksuite/openclaw-lark
@@ -78,10 +78,8 @@ export class CardKitController {
 
   private cardId: string | null = null;
   private readonly streamElementId = "streaming_content";
-  private readonly statusElementId = "status_bar";
   private sequence = 0;
-  private statusActive = false;
-  private apiMutex: Promise<void> = Promise.resolve();
+  private statusText = "";
 
   private flushCtrl: FlushController;
 
@@ -124,53 +122,18 @@ export class CardKitController {
   }
 
   /**
-   * 互斥执行 API 调用，防止 sequence 乱序
+   * 设置工具状态文本（拼接在流式内容前缀）
+   * 传空字符串清除状态
    */
-  private async withMutex<T>(fn: () => Promise<T>): Promise<T> {
-    const prev = this.apiMutex;
-    let resolve: () => void;
-    this.apiMutex = new Promise<void>(r => { resolve = r; });
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      resolve!();
-    }
+  async updateStatus(text: string): Promise<void> {
+    this.statusText = text;
   }
 
   /**
-   * 清除工具状态栏（仅在状态栏有内容时才发 API）
+   * 清除工具状态
    */
   async clearStatus(): Promise<void> {
-    if (!this.statusActive) return;
-    await this.updateStatus("");
-  }
-
-  async updateStatus(text: string): Promise<void> {
-    if (this.phase === "completed" || this.phase === "aborted") return;
-    await this.ensureCardCreated();
-    if (this.phase !== "streaming" || !this.cardId) return;
-    this.statusActive = text.length > 0;
-    await this.withMutex(async () => {
-      this.sequence++;
-      try {
-        const res = await this.client.cardkit.v1.cardElement.update({
-          path: { card_id: this.cardId!, element_id: this.statusElementId },
-          data: {
-            element: JSON.stringify({
-              tag: "markdown",
-              content: text,
-              element_id: this.statusElementId,
-            }),
-            sequence: this.sequence,
-          },
-        });
-        const err = checkCardKitError(res, "Status update");
-        if (err) console.error(`[CARDKIT] ${err.message}`);
-      } catch (error) {
-        console.error("[CARDKIT] Status update error:", error);
-      }
-    });
+    this.statusText = "";
   }
 
   /**
@@ -180,7 +143,7 @@ export class CardKitController {
     if (this.phase === "completed") return;
 
     this.flushCtrl.stop();
-    this.statusActive = false;
+    this.statusText = "";
 
     // 卡片未创建成功或创建失败，降级为普通消息
     if (!this.cardId || this.phase === "aborted") {
@@ -301,6 +264,7 @@ export class CardKitController {
    * 对齐 openclaw-lark：
    * - config: streaming_mode, wide_screen_mode, update_multi
    * - summary: 对象格式 { content, i18n_content }
+   * - 单元素架构：只有 streaming_content，工具状态作为前缀拼接
    */
   private async createCardEntity(): Promise<void> {
     const cardJson: any = {
@@ -319,11 +283,6 @@ export class CardKitController {
       },
       body: {
         elements: [
-          {
-            tag: "markdown",
-            content: " ",
-            element_id: this.statusElementId,
-          },
           {
             tag: "markdown",
             content: "⏳ 思考中...",
@@ -380,6 +339,7 @@ export class CardKitController {
 
   /**
    * 刷新卡片内容（打字机效果，使用 SDK）
+   * 工具状态作为前缀拼接在内容前
    */
   private async performFlush(content: string): Promise<void> {
     if (this.phase !== "streaming" || !this.cardId) return;
@@ -394,6 +354,11 @@ export class CardKitController {
       displayContent = stripThinking(content);
     }
 
+    // 拼接工具状态前缀
+    if (this.statusText) {
+      displayContent = `${this.statusText}\n\n${displayContent}`;
+    }
+
     if (!displayContent.trim()) return;
 
     const optimized = optimizeForCard(displayContent);
@@ -401,19 +366,17 @@ export class CardKitController {
       ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
       : optimized;
 
-    await this.withMutex(async () => {
-      this.sequence++;
-      const res = await this.client.cardkit.v1.cardElement.content({
-        path: { card_id: this.cardId!, element_id: this.streamElementId },
-        data: { content: truncated, sequence: this.sequence },
-      });
-
-      const err = checkCardKitError(res, "Stream update");
-      if (err) {
-        console.error(`[CARDKIT] ${err.message}`);
-        throw err;
-      }
+    this.sequence++;
+    const res = await this.client.cardkit.v1.cardElement.content({
+      path: { card_id: this.cardId!, element_id: this.streamElementId },
+      data: { content: truncated, sequence: this.sequence },
     });
+
+    const err = checkCardKitError(res, "Stream update");
+    if (err) {
+      console.error(`[CARDKIT] ${err.message}`);
+      throw err;
+    }
   }
 
   // ── 溢出处理 ──────────────────────────────────────────────
@@ -464,9 +427,6 @@ export class CardKitController {
 
   /**
    * 关闭 streaming_mode（对齐 openclaw-lark 两步关闭的第一步）
-   *
-   * PUT /cardkit/v1/cards/{id}/settings
-   * body: { settings: JSON.stringify({ streaming_mode: false }) }
    */
   private async closeStreamingMode(): Promise<void> {
     const res = await this.client.cardkit.v1.card.settings({
@@ -483,9 +443,6 @@ export class CardKitController {
 
   /**
    * 更新整个卡片内容（使用 SDK）
-   *
-   * PUT /cardkit/v1/cards/{id}
-   * body: { card: { type: "card_json", data: "<JSON string>" }, sequence }
    */
   private async updateCard(cardJson: any): Promise<void> {
     const res = await this.client.cardkit.v1.card.update({
@@ -506,7 +463,7 @@ export class CardKitController {
   // ── 卡片构建 ──────────────────────────────────────────────
 
   /**
-   * 构建最终卡片 JSON（不包含 status_bar）
+   * 构建最终卡片 JSON
    */
   private buildFinalCard(content: string, extraElements?: any[]): any {
     const cardJson: any = {
