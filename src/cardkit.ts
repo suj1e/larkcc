@@ -81,6 +81,7 @@ export class CardKitController {
   private readonly statusElementId = "status_bar";
   private sequence = 0;
   private statusActive = false;
+  private apiMutex: Promise<void> = Promise.resolve();
 
   private flushCtrl: FlushController;
 
@@ -123,6 +124,21 @@ export class CardKitController {
   }
 
   /**
+   * 互斥执行 API 调用，防止 sequence 乱序
+   */
+  private async withMutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.apiMutex;
+    let resolve: () => void;
+    this.apiMutex = new Promise<void>(r => { resolve = r; });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      resolve!();
+    }
+  }
+
+  /**
    * 清除工具状态栏（仅在状态栏有内容时才发 API）
    */
   async clearStatus(): Promise<void> {
@@ -131,19 +147,30 @@ export class CardKitController {
   }
 
   async updateStatus(text: string): Promise<void> {
+    if (this.phase === "completed" || this.phase === "aborted") return;
+    await this.ensureCardCreated();
     if (this.phase !== "streaming" || !this.cardId) return;
     this.statusActive = text.length > 0;
-    this.sequence++;
-    try {
-      const res = await this.client.cardkit.v1.cardElement.content({
-        path: { card_id: this.cardId!, element_id: this.statusElementId },
-        data: { content: text, sequence: this.sequence },
-      });
-      const err = checkCardKitError(res, "Status update");
-      if (err) console.error(`[CARDKIT] ${err.message}`);
-    } catch (error) {
-      console.error("[CARDKIT] Status update error:", error);
-    }
+    await this.withMutex(async () => {
+      this.sequence++;
+      try {
+        const res = await this.client.cardkit.v1.cardElement.update({
+          path: { card_id: this.cardId!, element_id: this.statusElementId },
+          data: {
+            element: JSON.stringify({
+              tag: "markdown",
+              content: text,
+              element_id: this.statusElementId,
+            }),
+            sequence: this.sequence,
+          },
+        });
+        const err = checkCardKitError(res, "Status update");
+        if (err) console.error(`[CARDKIT] ${err.message}`);
+      } catch (error) {
+        console.error("[CARDKIT] Status update error:", error);
+      }
+    });
   }
 
   /**
@@ -294,7 +321,7 @@ export class CardKitController {
         elements: [
           {
             tag: "markdown",
-            content: "",
+            content: " ",
             element_id: this.statusElementId,
           },
           {
@@ -374,17 +401,19 @@ export class CardKitController {
       ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
       : optimized;
 
-    this.sequence++;
-    const res = await this.client.cardkit.v1.cardElement.content({
-      path: { card_id: this.cardId!, element_id: this.streamElementId },
-      data: { content: truncated, sequence: this.sequence },
-    });
+    await this.withMutex(async () => {
+      this.sequence++;
+      const res = await this.client.cardkit.v1.cardElement.content({
+        path: { card_id: this.cardId!, element_id: this.streamElementId },
+        data: { content: truncated, sequence: this.sequence },
+      });
 
-    const err = checkCardKitError(res, "Stream update");
-    if (err) {
-      console.error(`[CARDKIT] ${err.message}`);
-      throw err;
-    }
+      const err = checkCardKitError(res, "Stream update");
+      if (err) {
+        console.error(`[CARDKIT] ${err.message}`);
+        throw err;
+      }
+    });
   }
 
   // ── 溢出处理 ──────────────────────────────────────────────
