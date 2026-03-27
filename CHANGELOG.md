@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-27
+
+### Added
+
+- CardKit SDK migration: all API calls now use `client.cardkit.v1.*` instead of raw fetch with manual token management
+- Streaming preview (summary) with correct object format `{ content, i18n_content }` for card list display
+- Two-step streaming close: `card.settings({ streaming_mode: false })` then `card.update()`, aligned with openclaw-lark best practice
+- `wide_screen_mode` and `update_multi` card config for all modes (CardKit, Update, non-streaming)
+- Structured error handling: `CardKitApiError` class with `isRateLimit` and `isTableLimit` detection
+- Shared `prepareOverflowContext()` helper extracted from `replyWithDocument()` for reuse in CardKit overflow
+- Tool status display in CardKit mode: status text prepended to streaming content during tool calls
+
+### Fixed
+
+- Bottom model name not showing in card footer (extracted from `modelUsage` keys instead of non-existent `result.model`)
+- CardKit status bar visibility (empty initial content prevented element rendering)
+- Sequence number conflicts between concurrent `updateStatus` and `performFlush` calls
+- `updateStatus` not awaited in agent.ts causing potential state race conditions
+- Unnecessary token cache invalidation on every overflow (now only refreshes when <10min remaining)
+
+### Changed
+
+- FlushController deduplication: CardKit mode now imports from `streaming.ts` instead of inline copy
+- CardKit constructor no longer accepts `appId`/`appSecret` params (SDK handles token management)
+- `@larksuiteoapi/node-sdk` upgraded from `^1` to `^1.60`
+- Default `flush_interval_ms` changed from 300 to 200
+- npm registry set to npmmirror
+
+### Refactored
+
+- Removed separate `status_bar` element, merged tool status into `streaming_content` as in-memory prefix to eliminate timing issues
+
 ## [0.5.0] - 2026-03-27
 
 ### Added
