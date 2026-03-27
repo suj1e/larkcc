@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { OverflowConfig, CardTableConfig } from "./config.js";
 import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType } from "./format/index.js";
+import { buildThinkingPanel } from "./format/duration.js";
 import type { Block, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
@@ -640,6 +641,8 @@ export interface CardBuildOptions {
   thinking?: string;
   /** 思考进行中指示器（流式中间态） */
   thinkingInProgress?: boolean;
+  /** 思考耗时（毫秒） */
+  reasoningElapsedMs?: number;
   /** 卡片标题，为空则不显示 header */
   cardTitle?: string;
 }
@@ -663,22 +666,10 @@ export function buildMarkdownCard(markdown: string, warnings: string[] = [], opt
   if (options?.thinkingInProgress) {
     elements.push({ tag: "markdown", content: "💭 思考中..." });
   } else if (options?.thinking) {
-    elements.push({
-      tag: "column_set",
-      flex_mode: "none",
-      background_style: "default",
-      columns: [{
-        tag: "column",
-        width: "weighted",
-        weight: 1,
-        elements: [{
-          tag: "markdown",
-          content: `💭 **思考过程**\n${options.thinking}`,
-        }],
-      }],
-      fold_flag: "fold",
-    });
-    elements.push({ tag: "hr" });
+    elements.push(...buildThinkingPanel({
+      thinking: options.thinking,
+      reasoningElapsedMs: options.reasoningElapsedMs,
+    }));
   }
 
   elements.push({ tag: "markdown", content });

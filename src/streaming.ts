@@ -91,9 +91,9 @@ export class FlushController {
     }
   }
 
-  /** 强制刷新（供外部调用） */
+  /** 强制刷新（即使 buffer 为空，用于工具状态变更等场景） */
   async flush(): Promise<void> {
-    await this.doFlush();
+    await this.doFlush(true);
   }
 
   /** 获取当前 buffer 内容 */
@@ -109,18 +109,18 @@ export class FlushController {
 
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
-      void this.doFlush();
+      void this.doFlush(false);
     }, delay);
   }
 
-  private async doFlush(): Promise<void> {
+  private async doFlush(force: boolean): Promise<void> {
     if (this.flushing || this.stopped) return;
-    if (this.buffer.length <= this.sentLength) return;
+    if (!force && this.buffer.length <= this.sentLength) return;
 
     this.flushing = true;
     try {
       await this.onFlush(this.buffer);
-      this.sentLength = this.buffer.length;
+      if (!force) this.sentLength = this.buffer.length;
       this.lastFlushTime = Date.now();
     } catch (error) {
       if (this.onError) {
@@ -142,7 +142,7 @@ export class FlushController {
     if (this.stopped || this.flushing) return;
     if (Date.now() - this.lastAppendTime > LONG_GAP_MS) {
       if (this.buffer.length > this.sentLength) {
-        void this.doFlush();
+        void this.doFlush(false);
       }
     }
   }
@@ -155,6 +155,8 @@ export interface CompleteOptions {
   metadata?: string;
   /** 思考内容，显示在可折叠区域 */
   thinking?: string;
+  /** 思考耗时（毫秒） */
+  reasoningElapsedMs?: number;
   /** 卡片标题 */
   cardTitle?: string;
 }
@@ -162,7 +164,7 @@ export interface CompleteOptions {
 export interface IStreamingCard {
   append(text: string): Promise<void>;
   complete(finalContent: string, options?: CompleteOptions): Promise<void>;
-  abort(message: string): Promise<void>;
+  abort(options?: { content?: string; thinking?: string; reasoningElapsedMs?: number }): Promise<void>;
   isDisabled(): boolean;
 }
 
@@ -325,13 +327,18 @@ class UpdateStreamingCard implements IStreamingCard {
     }
   }
 
-  async abort(message: string): Promise<void> {
+  async abort(options?: { content?: string; thinking?: string; reasoningElapsedMs?: number }): Promise<void> {
     this.flushCtrl.stop();
     if (this._disabled || !this.msgId) return;
 
-    const optimized = optimizeForCard(message);
+    const text = options?.content || "⏹ 任务已中断";
+    const optimized = optimizeForCard(text);
     try {
-      const card = buildMarkdownCard(optimized, [], { cardTitle: this.cardTitle });
+      const card = buildMarkdownCard(optimized, [], {
+        cardTitle: this.cardTitle,
+        thinking: options?.thinking,
+        reasoningElapsedMs: options?.reasoningElapsedMs,
+      });
       await this.client.im.message.patch({
         path: { message_id: this.msgId },
         data: { content: JSON.stringify(card) },

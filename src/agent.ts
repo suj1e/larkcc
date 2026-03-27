@@ -13,7 +13,8 @@ import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
 import { getFormatGuideContent } from "./format/guide.js";
-import { parseThinking, stripThinking } from "./format/thinking.js";
+import { stripThinking } from "./format/thinking.js";
+import { formatDuration } from "./format/duration.js";
 import { resolveImages } from "./format/image-resolver.js";
 import { createStreamingCard } from "./streaming.js";
 import type { CompleteOptions } from "./streaming.js";
@@ -75,7 +76,7 @@ function buildReplyContext(
  * 格式：⏱ 8.2s · Claude Sonnet 4 · 1,234 tokens · ⚠️ 2 张图片上传失败
  */
 function buildFooterMetadata(elapsedSeconds: number, model?: string, tokens?: number, imageFailed?: number): string {
-  const parts = [`⏱ ${elapsedSeconds.toFixed(1)}s`];
+  const parts = [`⏱ ${formatDuration(elapsedSeconds)}`];
   if (model) parts.push(model);
   if (tokens) parts.push(`${tokens.toLocaleString()} tokens`);
   if (imageFailed && imageFailed > 0) parts.push(`⚠️ ${imageFailed} 张图片上传失败`);
@@ -108,6 +109,8 @@ export async function runAgent(
   const startTime = Date.now();
 
   let textBuffer = "";
+  let thinkingBuffer = "";
+  let reasoningStartTime: number | null = null;
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
 
   // 构建 ReplyContext
@@ -166,6 +169,24 @@ export async function runAgent(
 
   const queryPrompt = hasImages ? messageGenerator() : prompt;
 
+  // abort 处理（统一入口，保留已有内容）
+  const handleAbort = async (logMsg: string) => {
+    logger.info(logMsg);
+    const reasoningElapsedMs = reasoningStartTime ? Date.now() - reasoningStartTime : undefined;
+    const abortOptions = {
+      content: textBuffer || undefined,
+      thinking: thinkingBuffer || undefined,
+      reasoningElapsedMs,
+    };
+    if (cardkitCtrl) {
+      await cardkitCtrl.abort(abortOptions);
+    } else if (streamingCard) {
+      await streamingCard.abort(abortOptions);
+    } else {
+      await replyFinalCard(client, chatId, rootMsgId, textBuffer || "⏹ 任务已中断", replyContext, { cardTitle: config.card_title });
+    }
+  };
+
   try {
     for await (const event of query({
       prompt: queryPrompt,
@@ -178,18 +199,8 @@ export async function runAgent(
         ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
     } as any)) {
-    // 检查是否已中断
-    if (abortSignal?.aborted) {
-      logger.info("Agent aborted by user");
-      if (cardkitCtrl) {
-        await cardkitCtrl.abort("⏹ 任务已中断");
-      } else if (streamingCard) {
-        await streamingCard.abort("⏹ 任务已中断");
-      } else {
-        await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", replyContext, { cardTitle: config.card_title });
-      }
-      break;
-    }
+    // 检查是否已中断（循环内快速路径）
+    if (abortSignal?.aborted) break;
 
     if (event.type === "assistant") {
       const blocks = event.message.content as Array<{
@@ -201,6 +212,11 @@ export async function runAgent(
       }>;
 
       for (const block of blocks) {
+        if (block.type === "thinking" && block.text) {
+          thinkingBuffer += block.text;
+          if (!reasoningStartTime) reasoningStartTime = Date.now();
+        }
+
         if (block.type === "text" && block.text) {
           textBuffer += block.text;
           // CardKit 模式：单卡片流式追加
@@ -245,7 +261,7 @@ export async function runAgent(
         if (block.type === "tool_result" && block.tool_use_id) {
           // CardKit 模式：清除工具状态
           if (isCardkitMode) {
-            cardkitCtrl?.clearStatus();
+            await cardkitCtrl?.clearStatus();
             break;
           }
           const toolInfo = toolMsgMap.get(block.tool_use_id);
@@ -287,15 +303,15 @@ export async function runAgent(
           tokens = maxTokens || undefined;
         }
 
-        // 解析 thinking
+        // 解析 thinking（thinking blocks 已在事件循环中单独捕获）
         const thinkingEnabled = config.streaming?.thinking_enabled === true;
+        const reasoningElapsedMs = reasoningStartTime ? Date.now() - reasoningStartTime : undefined;
         let finalContent: string;
         let thinking: string | undefined;
 
         if (thinkingEnabled) {
-          const parsed = parseThinking(textBuffer);
-          finalContent = parsed.content;
-          thinking = parsed.thinking || undefined;
+          finalContent = textBuffer;
+          thinking = thinkingBuffer || undefined;
         } else {
           finalContent = stripThinking(textBuffer);
         }
@@ -320,6 +336,7 @@ export async function runAgent(
         const completeOptions: CompleteOptions = {
           metadata,
           thinking,
+          reasoningElapsedMs,
           cardTitle: config.card_title,
         };
 
@@ -336,9 +353,18 @@ export async function runAgent(
       logger.reply(chatId);
     }
     }
+
+    // 循环外统一处理 abort（覆盖 SDK 抛异常或正常退出的情况）
+    if (abortSignal?.aborted) {
+      await handleAbort("Agent aborted by user");
+    }
   } catch (err) {
-    console.error(`[query error]:`, err);
-    throw err;
+    if (abortSignal?.aborted) {
+      await handleAbort("Agent aborted (SDK threw)");
+    } else {
+      console.error(`[query error]:`, err);
+      throw err;
+    }
   }
 }
 

@@ -20,7 +20,8 @@
 
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard } from "./format/card-optimize.js";
-import { parseThinking, stripThinking } from "./format/thinking.js";
+import { stripThinking } from "./format/thinking.js";
+import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument } from "./feishu.js";
 import type { ReplyContext } from "./feishu.js";
 import type { CompleteOptions, FlushControllerOptions } from "./streaming.js";
@@ -30,7 +31,6 @@ import { countTables } from "./format/index.js";
 // ── 常量 ──────────────────────────────────────────────────
 
 const TRUNCATE_LIMIT = 4000;
-const THINKING_OVERFLOW_TRUNCATE = 500;
 
 // ── 状态机 ──────────────────────────────────────────────────
 
@@ -80,6 +80,7 @@ export class CardKitController {
   private readonly streamElementId = "streaming_content";
   private sequence = 0;
   private statusText = "";
+  private apiMutex: Promise<void> = Promise.resolve();
 
   private flushCtrl: FlushController;
 
@@ -122,11 +123,46 @@ export class CardKitController {
   }
 
   /**
+   * 互斥执行 API 调用，防止 sequence 乱序
+   */
+  private async withMutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.apiMutex;
+    let resolve: () => void;
+    this.apiMutex = new Promise<void>(r => { resolve = r; });
+    await prev;
+    try {
+      return await fn();
+    } catch (err) {
+      console.error("[CARDKIT] withMutex error:", err);
+      throw err;
+    } finally {
+      resolve!();
+    }
+  }
+
+  /**
+   * 两步关闭：关闭 streaming_mode → 更新最终卡片内容（对齐 openclaw-lark）
+   */
+  private async closeAndFinalize(cardJson: any): Promise<void> {
+    await this.withMutex(async () => {
+      this.sequence++;
+      await this.closeStreamingMode();
+      this.sequence++;
+      await this.updateCard(cardJson);
+    });
+  }
+
+  /**
    * 设置工具状态文本（拼接在流式内容前缀）
    * 传空字符串清除状态
    */
   async updateStatus(text: string): Promise<void> {
     this.statusText = text;
+    if (this.phase === "completed" || this.phase === "aborted") return;
+    await this.ensureCardCreated();
+    if (this.phase === "streaming") {
+      await this.flushCtrl.flush();
+    }
   }
 
   /**
@@ -134,6 +170,9 @@ export class CardKitController {
    */
   async clearStatus(): Promise<void> {
     this.statusText = "";
+    if (this.phase === "streaming") {
+      await this.flushCtrl.flush();
+    }
   }
 
   /**
@@ -175,16 +214,10 @@ export class CardKitController {
 
     // ── 正常完成：两步关闭（对齐 openclaw-lark） ──
     const optimized = optimizeForCard(content);
-    const extraElements = this.buildThinkingElements(options?.thinking);
+    const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
     try {
-      // Step 1: 关闭 streaming_mode
-      this.sequence++;
-      await this.closeStreamingMode();
-
-      // Step 2: 更新最终卡片内容
-      this.sequence++;
       const finalCardJson = this.buildFinalCard(optimized, extraElements);
-      await this.updateCard(finalCardJson);
+      await this.closeAndFinalize(finalCardJson);
     } catch (error) {
       console.error("[CARDKIT] Final update failed, sending as new message:", error);
       const fallbackOptions = { ...options, metadata: this.appendFallbackHint(options?.metadata) };
@@ -198,23 +231,24 @@ export class CardKitController {
   }
 
   /**
-   * 中断
+   * 中断：保留已有内容，构建完整终态卡片（对齐 openclaw-lark）
    */
-  async abort(message: string): Promise<void> {
+  async abort(options?: { content?: string; thinking?: string; reasoningElapsedMs?: number }): Promise<void> {
     if (this.phase === "completed" || this.phase === "aborted") return;
 
     this.flushCtrl.stop();
+    this.statusText = "";
     this.phase = "aborted";
 
     if (!this.cardId) return;
 
-    const optimized = optimizeForCard(message);
+    const text = options?.content || "⏹ 任务已中断";
+    const optimized = optimizeForCard(text);
+    const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
+
     try {
-      const abortCardJson = this.buildFinalCard(optimized);
-      this.sequence++;
-      await this.closeStreamingMode();
-      this.sequence++;
-      await this.updateCard(abortCardJson);
+      const abortCardJson = this.buildFinalCard(optimized, extraElements);
+      await this.closeAndFinalize(abortCardJson);
     } catch (error) {
       console.error("[CARDKIT] Abort update failed:", error);
     }
@@ -345,12 +379,7 @@ export class CardKitController {
     if (this.phase !== "streaming" || !this.cardId) return;
 
     let displayContent = content;
-    if (this.thinkingEnabled) {
-      const parsed = parseThinking(content);
-      displayContent = parsed.isThinking && !parsed.content
-        ? "💭 思考中..."
-        : parsed.content || "💭 思考中...";
-    } else {
+    if (!this.thinkingEnabled) {
       displayContent = stripThinking(content);
     }
 
@@ -361,22 +390,25 @@ export class CardKitController {
 
     if (!displayContent.trim()) return;
 
-    const optimized = optimizeForCard(displayContent);
-    const truncated = optimized.length > TRUNCATE_LIMIT
-      ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
-      : optimized;
+    // 先截断再优化，避免对超长内容做无用正则处理
+    const preTruncated = displayContent.length > TRUNCATE_LIMIT
+      ? displayContent.slice(0, TRUNCATE_LIMIT) + "\n\n..."
+      : displayContent;
+    const optimized = optimizeForCard(preTruncated);
 
-    this.sequence++;
-    const res = await this.client.cardkit.v1.cardElement.content({
-      path: { card_id: this.cardId!, element_id: this.streamElementId },
-      data: { content: truncated, sequence: this.sequence },
+    await this.withMutex(async () => {
+      this.sequence++;
+      const res = await this.client.cardkit.v1.cardElement.content({
+        path: { card_id: this.cardId!, element_id: this.streamElementId },
+        data: { content: optimized, sequence: this.sequence },
+      });
+
+      const err = checkCardKitError(res, "Stream update");
+      if (err) {
+        console.error(`[CARDKIT] ${err.message}`);
+        throw err;
+      }
     });
-
-    const err = checkCardKitError(res, "Stream update");
-    if (err) {
-      console.error(`[CARDKIT] ${err.message}`);
-      throw err;
-    }
   }
 
   // ── 溢出处理 ──────────────────────────────────────────────
@@ -401,14 +433,10 @@ export class CardKitController {
         cardContent += `\n\n---\n${options.metadata}`;
       }
 
-      const extraElements = this.buildThinkingElements(options?.thinking);
+      const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
       const finalCardJson = this.buildFinalCard(cardContent, extraElements);
 
-      // 两步关闭
-      this.sequence++;
-      await this.closeStreamingMode();
-      this.sequence++;
-      await this.updateCard(finalCardJson);
+      await this.closeAndFinalize(finalCardJson);
     } catch (error) {
       console.error("[CARDKIT] Overflow document failed, truncating:", error);
       const optimized = optimizeForCard(rawContent);
@@ -416,10 +444,7 @@ export class CardKitController {
         ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
         : optimized;
       const finalCardJson = this.buildFinalCard(truncated);
-      this.sequence++;
-      await this.closeStreamingMode();
-      this.sequence++;
-      await this.updateCard(finalCardJson);
+      await this.closeAndFinalize(finalCardJson);
     }
   }
 
@@ -494,33 +519,12 @@ export class CardKitController {
   }
 
   /**
-   * 构建 thinking 可折叠区域
+   * 构建 thinking 折叠面板（委托共享函数）
    */
-  private buildThinkingElements(thinking?: string): any[] {
+  private buildThinkingElements(thinking?: string, reasoningElapsedMs?: number): any[] {
     if (!thinking) return [];
-
-    const truncatedThinking = thinking.length > THINKING_OVERFLOW_TRUNCATE
-      ? thinking.slice(0, THINKING_OVERFLOW_TRUNCATE) + "\n..."
-      : thinking;
-
-    return [
-      {
-        tag: "column_set",
-        flex_mode: "none",
-        background_style: "default",
-        columns: [{
-          tag: "column",
-          width: "weighted",
-          weight: 1,
-          elements: [{
-            tag: "markdown",
-            content: `💭 **思考过程**\n${truncatedThinking}`,
-          }],
-        }],
-        fold_flag: "fold",
-      },
-      { tag: "hr" },
-    ];
+    return buildThinkingPanel({ thinking, reasoningElapsedMs });
   }
 
 }
+
