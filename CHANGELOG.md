@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-27
+
+### Changed
+
+- Thinking phase now shows "💭 思考中..." status in CardKit streaming, providing real-time feedback during reasoning
+
 ## [0.6.0] - 2026-03-27
 
 ### Added
