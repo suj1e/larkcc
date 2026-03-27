@@ -216,7 +216,10 @@ export async function runAgent(
       for (const block of blocks) {
         if (block.type === "thinking" && block.text) {
           thinkingBuffer += block.text;
-          if (!reasoningStartTime) reasoningStartTime = Date.now();
+          if (!reasoningStartTime) {
+            reasoningStartTime = Date.now();
+            if (isCardkitMode) await cardkitCtrl?.updateStatus("💭 思考中...");
+          }
         }
 
         if (block.type === "text" && block.text) {
