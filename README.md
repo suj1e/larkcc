@@ -388,10 +388,13 @@ setup 不需要填 open_id，发第一条消息自动保存。
 ```yaml
 streaming:
   enabled: true                # 是否启用流式（默认 true）
-  mode: update                 # update（message.patch）| cardkit | none
+  mode: cardkit                # update（message.patch）| cardkit | none
   flush_interval_ms: 300       # 最小刷新间隔（毫秒）
   thinking_enabled: false      # 是否显示 Claude 思考过程
   fallback_on_error: true      # 失败时降级为一次性发送
+
+# 卡片标题（所有模式生效）
+card_title: Claude              # 留空则不显示 header
 
 # 图片自动解析（下载外部图片上传到飞书）
 image_resolver:
@@ -406,8 +409,9 @@ image_resolver:
 | `cardkit` | 使用飞书 CardKit API（真正打字机效果） | `cardkit:card:write` |
 | `none` | 禁用流式，等待完整输出后一次性发送 | 无 |
 
-- `update` 模式为默认模式，使用现有的消息更新 API，无需额外权限
-- `cardkit` 模式需要开通 CardKit 权限，体验更流畅，失败时自动降级为 `update`
+- `cardkit` 模式为默认模式，采用单卡片架构（对齐飞书官方 OpenClaw 方案），全程只有一个消息
+- `cardkit` 模式下工具调用不可见（不打工具卡片），失败时自动降级为 `update`
+- `update` 模式使用消息 patch API 模拟流式，会发送独立的工具调用卡片
 - 流式过程中如果内容超长，最终会自动写入云文档并回复链接
 
 ### 中断
@@ -501,10 +505,13 @@ overflow:
 format_guide:
   enabled: true               # 是否注入飞书格式要求到 prompt
 
+# 卡片标题
+card_title: Claude              # 留空则不显示 header
+
 # 流式输出配置
 streaming:
   enabled: true               # 是否启用流式（默认 true）
-  mode: update                # update | cardkit | none
+  mode: cardkit                # update | cardkit | none
   flush_interval_ms: 300      # 最小刷新间隔（毫秒）
   thinking_enabled: false     # 是否显示思考过程
   fallback_on_error: true     # 失败时降级
@@ -534,12 +541,8 @@ reaction:
   done: DONE            # 完成
   error: OnIt           # 出错
 
-# 思考状态词（随机显示）
-thinking_words:
-  - "💭 思考中..."
-  - "🔍 分析中..."
-  - "💻 编码中..."
-  # ... 更多状态词
+# 卡片标题
+card_title: Claude
 
 profiles:
   mybot:
@@ -982,6 +985,10 @@ larkcc -p mybot             # Use specified bot
 ### Event Subscription
 
 Use **Long Connection** → Subscribe to `im.message.receive_v1`
+
+## 致谢
+
+CardKit 流式卡片实现参考了飞书官方 [openclaw-lark](https://github.com/larksuite/openclaw-lark) 项目的 API 用法与架构设计。
 
 ## Contributing
 

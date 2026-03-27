@@ -233,6 +233,8 @@ export interface ReplyFinalOptions {
   metadata?: string;
   /** 思考内容，显示在可折叠区域 */
   thinking?: string;
+  /** 卡片标题 */
+  cardTitle?: string;
 }
 
 export async function replyFinalCard(
@@ -270,7 +272,7 @@ export async function replyFinalCard(
     const finalContent = options?.metadata
       ? `${markdown}\n\n---\n${options.metadata}`
       : markdown;
-    await sendMessageChunk(client, rootMsgId, finalContent, options?.thinking);
+    await sendMessageChunk(client, rootMsgId, finalContent, options?.thinking, options?.cardTitle);
     return;
   }
 
@@ -289,7 +291,7 @@ export async function replyFinalCard(
       const finalContent = isLast && options?.metadata
         ? `${content}\n\n---\n${options.metadata}`
         : content;
-      await sendMessageChunk(client, rootMsgId, finalContent, isLast ? options?.thinking : undefined);
+      await sendMessageChunk(client, rootMsgId, finalContent, isLast ? options?.thinking : undefined, isLast ? options?.cardTitle : undefined);
     }
   }
 }
@@ -299,6 +301,7 @@ async function sendMessageChunk(
   rootMsgId: string,
   content: string,
   thinking?: string,
+  cardTitle?: string,
 ): Promise<void> {
   // 过滤 blob URL 和外部图片
   const { content: sanitizedContent, warnings } = sanitizeContent(content);
@@ -311,7 +314,7 @@ async function sendMessageChunk(
 
   try {
     const optimizedContent = optimizeForCard(finalContent);
-    const card = buildMarkdownCard(optimizedContent, [], thinking ? { thinking } : undefined);
+    const card = buildMarkdownCard(optimizedContent, [], { thinking, cardTitle });
     await (client.im.message as any).reply({
       path: { message_id: rootMsgId },
       data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
@@ -411,6 +414,17 @@ async function replyWithDocument(
   }
 }
 
+// 按工具名匹配的状态词
+const TOOL_STATUS_WORDS: Record<string, string[]> = {
+  Read:  ["📖 Reading...", "📖 Scanning..."],
+  Write: ["📝 Writing...", "📝 Creating..."],
+  Edit:  ["✏️ Editing...", "✏️ Modifying..."],
+  Bash:  ["⚡ Running...", "⚡ Executing..."],
+  Glob:  ["📂 Finding files...", "📂 Scanning..."],
+  Grep:  ["🔍 Searching...", "🔍 Analyzing..."],
+  LS:    ["📁 Listing...", "📁 Browsing..."],
+};
+
 export async function sendToolCard(
   client: lark.Client,
   chatId: string,
@@ -418,17 +432,21 @@ export async function sendToolCard(
   label: string,
   detail: string,
   status: "running" | "done" | "error" = "running",
-  thinkingWords?: string[],
+  toolName?: string,
 ): Promise<string> {
   const DEFAULT_STATUS = {
-    running: "⏳ 进行中...",
+    running: "⏳ Processing...",
     done: "✅ 完成",
     error: "❌ 失败",
   } as const;
 
-  const statusIcon = status === "running" && thinkingWords?.length
-    ? thinkingWords[Math.floor(Math.random() * thinkingWords.length)]
-    : DEFAULT_STATUS[status];
+  let statusIcon: string = DEFAULT_STATUS[status];
+  if (status === "running" && toolName) {
+    const words = TOOL_STATUS_WORDS[toolName];
+    if (words?.length) {
+      statusIcon = words[Math.floor(Math.random() * words.length)];
+    }
+  }
 
   const content = `${label}\n\`${detail}\`\n${statusIcon}`;
   const card = buildMarkdownCard(content);
@@ -613,6 +631,8 @@ export interface CardBuildOptions {
   thinking?: string;
   /** 思考进行中指示器（流式中间态） */
   thinkingInProgress?: boolean;
+  /** 卡片标题，为空则不显示 header */
+  cardTitle?: string;
 }
 
 /**
@@ -654,10 +674,19 @@ export function buildMarkdownCard(markdown: string, warnings: string[] = [], opt
 
   elements.push({ tag: "markdown", content });
 
-  return {
+  const card: any = {
     schema: "2.0",
     body: { elements },
   };
+
+  if (options?.cardTitle) {
+    card.header = {
+      title: { tag: "plain_text", content: options.cardTitle },
+      template: "blue",
+    };
+  }
+
+  return card;
 }
 
 // ── 云文档（超长消息写入）─────────────────────────────────────

@@ -1,12 +1,11 @@
 /**
- * 流式卡片模块
+ * 流式卡片模块（Update 模式）
  *
- * 支持两种流式模式：
- * - update: 使用飞书消息 message.patch API 模拟流式（无需额外权限）
- * - cardkit: 使用飞书 CardKit API 实现真正的打字机效果（需要 CardKit 权限）
+ * 使用飞书消息 message.patch API 模拟流式输出。
+ * CardKit 模式已迁移至 cardkit.ts，采用单卡片架构。
+ *
+ * - update: message.patch 模拟流式（无需额外权限）
  * - none: 禁用流式
- *
- * CardKit 失败时自动降级为 update 模式，update 失败时降级为一次性发送。
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
@@ -14,19 +13,15 @@ import { optimizeForCard } from "./format/card-optimize.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import type { StreamingConfig } from "./config.js";
 import type { ReplyContext } from "./feishu.js";
-import { replyFinalCard, buildMarkdownCard, getTenantAccessToken } from "./feishu.js";
+import { replyFinalCard, buildMarkdownCard } from "./feishu.js";
 import type { CardBuildOptions } from "./feishu.js";
-
-// ── CardKit API 常量 ──────────────────────────────────────────────
-
-const CARDKIT_BASE = "https://open.feishu.cn/open-apis/cardkit/v1";
 
 // ── FlushController：互斥守卫 + 自适应节流 + 长间隔批处理 ───────────
 
 const LONG_GAP_MS = 2000;   // 2 秒无新内容，强制刷新
 const GAP_CHECK_INTERVAL = 500; // 每 500ms 检查一次长间隔
 
-interface FlushControllerOptions {
+export interface FlushControllerOptions {
   /** 最小刷新间隔（毫秒） */
   minIntervalMs: number;
   /** 刷新回调，接收完整 buffer 内容 */
@@ -46,7 +41,7 @@ interface FlushControllerOptions {
  *
  * 生命周期：start() → [append() → doFlush()]* → stop()
  */
-class FlushController {
+export class FlushController {
   private minIntervalMs: number;
   private onFlush: (content: string) => Promise<void>;
   private onError?: (error: unknown) => void;
@@ -152,23 +147,18 @@ class FlushController {
   }
 }
 
-// ── 流式卡片抽象接口 ──────────────────────────────────────────────
+// ── 流式卡片接口 ──────────────────────────────────────────────
 
 export interface CompleteOptions {
   /** 底部元数据（耗时、token 等） */
   metadata?: string;
   /** 思考内容，显示在可折叠区域 */
   thinking?: string;
+  /** 卡片标题 */
+  cardTitle?: string;
 }
 
-/**
- * 流式卡片控制器
- *
- * 生命周期：
- * start() → [append() → flush()]* → complete() / abort()
- */
 export interface IStreamingCard {
-  start(): Promise<void>;
   append(text: string): Promise<void>;
   complete(finalContent: string, options?: CompleteOptions): Promise<void>;
   abort(message: string): Promise<void>;
@@ -183,6 +173,7 @@ class UpdateStreamingCard implements IStreamingCard {
   private fallbackOnError: boolean;
   private thinkingEnabled: boolean;
   private context: ReplyContext;
+  private cardTitle: string;
 
   private msgId: string | null = null;
   private _disabled = false;
@@ -196,12 +187,14 @@ class UpdateStreamingCard implements IStreamingCard {
     fallbackOnError: boolean,
     thinkingEnabled: boolean,
     context: ReplyContext,
+    cardTitle: string,
   ) {
     this.client = client;
     this.rootMsgId = rootMsgId;
     this.fallbackOnError = fallbackOnError;
     this.thinkingEnabled = thinkingEnabled;
     this.context = context;
+    this.cardTitle = cardTitle;
 
     this.flushCtrl = new FlushController({
       minIntervalMs: intervalMs,
@@ -216,12 +209,21 @@ class UpdateStreamingCard implements IStreamingCard {
     });
   }
 
-  async start(): Promise<void> {
+  private async ensureStarted(): Promise<void> {
+    if (this._disabled) return;
+    if (this._started) return;
+
     try {
-      const card = {
+      const card: any = {
         schema: "2.0",
         body: { elements: [{ tag: "markdown", content: "⏳ 思考中..." }] },
       };
+      if (this.cardTitle) {
+        card.header = {
+          title: { tag: "plain_text", content: this.cardTitle },
+          template: "blue",
+        };
+      }
       const res = await (this.client.im.message as any).reply({
         path: { message_id: this.rootMsgId },
         data: {
@@ -246,18 +248,14 @@ class UpdateStreamingCard implements IStreamingCard {
   }
 
   async append(text: string): Promise<void> {
+    await this.ensureStarted();
     if (this._disabled) return;
-    if (!this._started) {
-      await this.start();
-      if (this._disabled) return;
-    }
     this.flushCtrl.append(text);
   }
 
   private async performFlush(content: string): Promise<void> {
     if (this._disabled || !this.msgId) return;
 
-    // 解析 thinking
     let displayContent = content;
     let cardOptions: CardBuildOptions | undefined;
 
@@ -281,7 +279,7 @@ class UpdateStreamingCard implements IStreamingCard {
     const optimized = optimizeForCard(displayContent);
     const truncated = optimized.length > 4000 ? optimized.slice(0, 4000) + "\n\n..." : optimized;
 
-    const card = buildMarkdownCard(truncated, [], cardOptions);
+    const card = buildMarkdownCard(truncated, [], { ...cardOptions, cardTitle: this.cardTitle });
     await this.client.im.message.patch({
       path: { message_id: this.msgId },
       data: { content: JSON.stringify(card) },
@@ -292,20 +290,6 @@ class UpdateStreamingCard implements IStreamingCard {
     this.flushCtrl.stop();
 
     if (this._disabled || !this.msgId) {
-      if (this.msgId) {
-        try {
-          const card = {
-            schema: "2.0",
-            body: { elements: [{ tag: "markdown", content: "📝 处理中..." }] },
-          };
-          await this.client.im.message.patch({
-            path: { message_id: this.msgId },
-            data: { content: JSON.stringify(card) },
-          });
-        } catch (error) {
-          console.error("[STREAM] Fallback patch failed:", error);
-        }
-      }
       await replyFinalCard(
         this.client, this.context.chatId, this.rootMsgId,
         finalContent, this.context, options,
@@ -313,16 +297,16 @@ class UpdateStreamingCard implements IStreamingCard {
       return;
     }
 
-    // 追加 metadata
     let content = finalContent;
     if (options?.metadata) {
       content += `\n\n---\n${options.metadata}`;
     }
 
     const optimized = optimizeForCard(content);
-    const cardOptions: CardBuildOptions | undefined = options?.thinking
-      ? { thinking: options.thinking }
-      : undefined;
+    const cardOptions: CardBuildOptions | undefined = {
+      thinking: options?.thinking,
+      cardTitle: this.cardTitle,
+    };
 
     try {
       const card = buildMarkdownCard(optimized, [], cardOptions);
@@ -345,10 +329,7 @@ class UpdateStreamingCard implements IStreamingCard {
 
     const optimized = optimizeForCard(message);
     try {
-      const card = {
-        schema: "2.0",
-        body: { elements: [{ tag: "markdown", content: optimized }] },
-      };
+      const card = buildMarkdownCard(optimized, [], { cardTitle: this.cardTitle });
       await this.client.im.message.patch({
         path: { message_id: this.msgId },
         data: { content: JSON.stringify(card) },
@@ -363,360 +344,20 @@ class UpdateStreamingCard implements IStreamingCard {
   }
 }
 
-// ── CardKit 模式 ─────────────────────────────────────────────────
-
-class CardKitStreamingCard implements IStreamingCard {
-  private client: lark.Client;
-  private appId: string;
-  private appSecret: string;
-  private token: string = "";
-  private rootMsgId: string;
-  private fallbackOnError: boolean;
-  private thinkingEnabled: boolean;
-  private context: ReplyContext;
-
-  private cardId: string | null = null;
-  private readonly streamElementId = "streaming_content";
-  private sequence = 0;
-  private _disabled = false;
-  private _started = false;
-  private flushCtrl: FlushController;
-
-  constructor(
-    client: lark.Client,
-    appId: string,
-    appSecret: string,
-    rootMsgId: string,
-    intervalMs: number,
-    fallbackOnError: boolean,
-    thinkingEnabled: boolean,
-    context: ReplyContext,
-  ) {
-    this.client = client;
-    this.appId = appId;
-    this.appSecret = appSecret;
-    this.rootMsgId = rootMsgId;
-    this.fallbackOnError = fallbackOnError;
-    this.thinkingEnabled = thinkingEnabled;
-    this.context = context;
-
-    this.flushCtrl = new FlushController({
-      minIntervalMs: intervalMs,
-      onFlush: (content) => this.performFlush(content),
-      onError: (error) => {
-        console.error("[CARDKIT] Flush failed:", error);
-        if (this.fallbackOnError) {
-          console.error("[CARDKIT] Disabling streaming, will fallback to final send");
-          this._disabled = true;
-        }
-      },
-    });
-  }
-
-  async start(): Promise<void> {
-    try {
-      // 0. Lazy 获取 tenant_access_token
-      this.token = await getTenantAccessToken(this.appId, this.appSecret);
-
-      // 1. 创建 CardKit 卡片实体（JSON 2.0 schema + streaming_mode）
-      const cardJson = {
-        schema: "2.0",
-        config: {
-          streaming_mode: true,
-        },
-        header: {
-          title: { tag: "plain_text", content: "Claude" },
-          template: "blue",
-        },
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: "⏳ 思考中...",
-              element_id: this.streamElementId,
-            },
-          ],
-        },
-      };
-
-      const createRes = await fetch(`${CARDKIT_BASE}/cards`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "card_json",
-          data: JSON.stringify(cardJson),
-        }),
-      });
-
-      if (!createRes.ok) {
-        const errText = await createRes.text();
-        console.error(`[CARDKIT] Failed to create card entity: ${createRes.status} ${errText.slice(0, 200)}`);
-        throw new Error(`CardKit create failed: ${createRes.status}`);
-      }
-
-      const createData = await createRes.json() as any;
-      this.cardId = createData.data?.card?.card_id;
-
-      if (!this.cardId) {
-        throw new Error("CardKit: no card_id in response");
-      }
-
-      console.error(`[CARDKIT] Card created: ${this.cardId}, element: ${this.streamElementId}`);
-
-      // 2. 发送消息引用该卡片
-      const msgRes = await fetch(`${CARDKIT_BASE}/cards/${this.cardId}/messages`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          msg_type: "interactive",
-          receive_id_type: "chat_id",
-          receive_id: this.context.chatId,
-        }),
-      });
-
-      if (!msgRes.ok) {
-        console.error(`[CARDKIT] Failed to send card message: ${msgRes.status}`);
-        throw new Error(`CardKit send message failed: ${msgRes.status}`);
-      }
-
-      // 3. 启动刷新控制器
-      this.flushCtrl.start();
-      this._started = true;
-    } catch (error) {
-      console.error("[CARDKIT] Start failed, falling back to update mode:", error);
-      if (this.fallbackOnError) {
-        this._disabled = true;
-      }
-    }
-  }
-
-  async append(text: string): Promise<void> {
-    if (this._disabled) return;
-    if (!this._started) {
-      await this.start();
-      if (this._disabled) return;
-    }
-    this.flushCtrl.append(text);
-  }
-
-  private async performFlush(content: string): Promise<void> {
-    if (this._disabled || !this.cardId) return;
-
-    // 解析 thinking
-    let displayContent = content;
-    if (this.thinkingEnabled) {
-      const parsed = parseThinking(content);
-      displayContent = parsed.isThinking && !parsed.content
-        ? "💭 思考中..."
-        : parsed.content || "💭 思考中...";
-    } else {
-      displayContent = stripThinking(content);
-    }
-
-    if (!displayContent.trim()) return;
-
-    const optimized = optimizeForCard(displayContent);
-    const truncated = optimized.length > 4000 ? optimized.slice(0, 4000) + "\n\n..." : optimized;
-
-    this.sequence++;
-    const res = await fetch(
-      `${CARDKIT_BASE}/cards/${this.cardId}/elements/${this.streamElementId}/content`,
-      {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          content: truncated,
-          sequence: this.sequence,
-        }),
-      },
-    );
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[CARDKIT] Stream update failed: ${res.status} ${errText.slice(0, 200)}`);
-      throw new Error(`CardKit stream update failed: ${res.status}`);
-    }
-  }
-
-  async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
-    this.flushCtrl.stop();
-
-    if (this._disabled || !this.cardId) {
-      await replyFinalCard(
-        this.client, this.context.chatId, this.rootMsgId,
-        finalContent, this.context, options,
-      );
-      return;
-    }
-
-    // 追加 metadata
-    let content = finalContent;
-    if (options?.metadata) {
-      content += `\n\n---\n${options.metadata}`;
-    }
-
-    const optimized = optimizeForCard(content);
-
-    try {
-      // 最终更新卡片内容
-      const finalCardJson = {
-        schema: "2.0",
-        config: { streaming_mode: false },
-        header: {
-          title: { tag: "plain_text", content: "Claude" },
-          template: "blue",
-        },
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: optimized,
-              element_id: this.streamElementId,
-            },
-          ],
-        },
-      };
-
-      this.sequence++;
-      await fetch(`${CARDKIT_BASE}/cards/${this.cardId}`, {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          card: { type: "card_json", data: JSON.stringify(finalCardJson) },
-          sequence: this.sequence,
-        }),
-      });
-    } catch (error) {
-      console.error("[CARDKIT] Final update failed, sending as new message:", error);
-      await replyFinalCard(
-        this.client, this.context.chatId, this.rootMsgId,
-        finalContent, this.context, options,
-      );
-    }
-  }
-
-  async abort(message: string): Promise<void> {
-    this.flushCtrl.stop();
-    if (this._disabled || !this.cardId) return;
-
-    const optimized = optimizeForCard(message);
-    try {
-      const abortCardJson = {
-        schema: "2.0",
-        config: { streaming_mode: false },
-        header: {
-          title: { tag: "plain_text", content: "Claude" },
-          template: "blue",
-        },
-        body: {
-          elements: [
-            {
-              tag: "markdown",
-              content: optimized,
-              element_id: this.streamElementId,
-            },
-          ],
-        },
-      };
-
-      this.sequence++;
-      await fetch(`${CARDKIT_BASE}/cards/${this.cardId}`, {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          card: { type: "card_json", data: JSON.stringify(abortCardJson) },
-          sequence: this.sequence,
-        }),
-      });
-    } catch (error) {
-      console.error("[CARDKIT] Abort update failed:", error);
-    }
-  }
-
-  isDisabled(): boolean {
-    return this._disabled;
-  }
-}
-
-// ── 降级包装器 ──────────────────────────────────────────────────
-
-/**
- * FallbackStreamingCard：自动降级包装器
- *
- * 启动时先尝试 primary（CardKit），失败后自动切换到 fallback（Update）。
- * 降级后所有操作透明委托给 fallback，调用方无需感知。
- */
-class FallbackStreamingCard implements IStreamingCard {
-  private primary: IStreamingCard;
-  private fallback: IStreamingCard | null = null;
-
-  constructor(
-    primary: IStreamingCard,
-    private fallbackFactory: () => IStreamingCard,
-  ) {
-    this.primary = primary;
-  }
-
-  private get active(): IStreamingCard {
-    return this.fallback ?? this.primary;
-  }
-
-  async start(): Promise<void> {
-    await this.primary.start();
-    if (this.primary.isDisabled()) {
-      console.error("[STREAM] Primary streaming failed, activating fallback (update mode)");
-      this.fallback = this.fallbackFactory();
-      await this.fallback.start();
-    }
-  }
-
-  async append(text: string): Promise<void> {
-    await this.active.append(text);
-  }
-
-  async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
-    await this.active.complete(finalContent, options);
-  }
-
-  async abort(message: string): Promise<void> {
-    await this.active.abort(message);
-  }
-
-  isDisabled(): boolean {
-    return this.active.isDisabled();
-  }
-}
-
 // ── 工厂函数 ─────────────────────────────────────────────────────
 
 /**
- * 根据配置创建流式卡片实例
- * 返回 null 表示不启用流式
- *
- * 降级链：cardkit → update → 一次性发送
+ * 创建 Update 模式流式卡片
+ * CardKit 模式请使用 cardkit.ts 中的 CardKitController
  */
 export function createStreamingCard(
   config: StreamingConfig | undefined,
   client: lark.Client,
   rootMsgId: string,
   context: ReplyContext,
+  cardTitle?: string,
 ): IStreamingCard | null {
-  if (!config?.enabled || config.mode === "none") {
+  if (!config?.enabled || config.mode === "none" || config.mode === "cardkit") {
     return null;
   }
 
@@ -724,23 +365,7 @@ export function createStreamingCard(
   const fallbackOnError = config.fallback_on_error !== false;
   const thinkingEnabled = config.thinking_enabled === true;
 
-  if (config.mode === "cardkit") {
-    const primary = new CardKitStreamingCard(
-      client, context.appId, context.appSecret,
-      rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context,
-    );
-    if (fallbackOnError) {
-      const fallbackFactory = () => new UpdateStreamingCard(
-        client, rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context,
-      );
-      return new FallbackStreamingCard(primary, fallbackFactory);
-    }
-    return primary;
-  }
-
-  // update 模式
-  return new UpdateStreamingCard(client, rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context);
+  return new UpdateStreamingCard(
+    client, rootMsgId, intervalMs, fallbackOnError, thinkingEnabled, context, cardTitle ?? "",
+  );
 }
-
-// 为了向后兼容，保留 StreamingCard 作为导出别名
-export type StreamingCard = IStreamingCard;

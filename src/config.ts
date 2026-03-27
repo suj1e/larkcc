@@ -85,7 +85,7 @@ export interface ProfileConfig {
 
 export interface LarkccConfig extends ProfileConfig {
   reaction?: ReactionConfig;
-  thinking_words?: string[];
+  card_title?: string;
   card_table?: CardTableConfig;
   format_guide?: FormatGuideConfig;
   streaming?: StreamingConfig;
@@ -105,7 +105,7 @@ export interface RawConfig {
   exec_commands?: Record<string, string>;  // 自定义 EXEC 命令
   exec_security?: ExecSecurity;  // EXEC 安全配置
   reaction?: ReactionConfig;     // reaction emoji 配置
-  thinking_words?: string[];     // 思考状态词列表
+  card_title?: string;           // 卡片标题
   card_table?: CardTableConfig;  // 卡片表格限制配置
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
@@ -182,47 +182,7 @@ const DEFAULT_IMAGE_RESOLVER: ImageResolverConfig = {
   enabled: true,
 };
 
-const DEFAULT_THINKING_WORDS: string[] = [
-  "💭 思考中...",
-  "🔍 分析中...",
-  "📚 查阅中...",
-  "✍️ 处理中...",
-  "🧠 构思中...",
-  "⚡ 计算中...",
-  "🔬 研究中...",
-  "📝 整理中...",
-  "🎯 规划中...",
-  "🔧 调试中...",
-  "📖 阅读中...",
-  "🌐 搜索中...",
-  "🧩 组合中...",
-  "🎨 设计中...",
-  "💡 灵感中...",
-  "🚀 启动中...",
-  "🔄 更新中...",
-  "📊 统计中...",
-  "🛠️ 构建中...",
-  "🧪 测试中...",
-  "📦 打包中...",
-  "⚡ 执行中...",
-  "📥 获取中...",
-  "📤 推送中...",
-  "🔗 连接中...",
-  "🧹 清理中...",
-  "🎪 准备中...",
-  "🎲 随机中...",
-  "⏳ 进行中...",
-  "💻 编码中...",
-  "🌲 分叉中...",
-  "🌿 合并中...",
-  "📝 提交中...",
-  "👀 审查中...",
-  "🐛 除错中...",
-  "✨ 优化中...",
-  "🔨 重构中...",
-  "📋 解析中...",
-  "🧬 解构中...",
-];
+const DEFAULT_CARD_TITLE = "Claude";
 
 function loadYml(filePath: string): any {
   if (!fs.existsSync(filePath)) return null;
@@ -313,7 +273,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       done: raw.reaction?.done ?? DEFAULT_REACTION.done,
       error: raw.reaction?.error ?? DEFAULT_REACTION.error,
     },
-    thinking_words: raw.thinking_words ?? DEFAULT_THINKING_WORDS,
+    card_title: raw.card_title ?? DEFAULT_CARD_TITLE,
     card_table: {
       max_tables_per_card: raw.card_table?.max_tables_per_card ?? DEFAULT_CARD_TABLE.max_tables_per_card,
     },
@@ -383,9 +343,9 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
     raw.reaction = DEFAULT_REACTION;
   }
 
-  // 添加默认 thinking_words 配置（首次创建时）
-  if (!raw.thinking_words) {
-    raw.thinking_words = DEFAULT_THINKING_WORDS;
+  // 添加默认 card_title 配置（首次创建时）
+  if (!raw.card_title) {
+    raw.card_title = DEFAULT_CARD_TITLE;
   }
 
   // 添加默认 streaming 配置（首次创建时）

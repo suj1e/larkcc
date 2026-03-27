@@ -16,7 +16,8 @@ import { getFormatGuideContent } from "./format/guide.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import { resolveImages } from "./format/image-resolver.js";
 import { createStreamingCard } from "./streaming.js";
-import type { StreamingCard, CompleteOptions } from "./streaming.js";
+import type { CompleteOptions } from "./streaming.js";
+import { CardKitController } from "./cardkit.js";
 
 const TOOL_LABELS: Record<string, string> = {
   Read:            "📂 读取文件",
@@ -118,8 +119,25 @@ export async function runAgent(
   // 构建 ReplyContext
   const replyContext = buildReplyContext(config, profile, cwd, chatId, rootMsgId);
 
-  // 创建流式卡片（如果配置启用，首次 append 时自动 start）
-  const streamingCard = createStreamingCard(config.streaming, client, rootMsgId, replyContext);
+  // 创建流式控制器
+  // CardKit 模式：单卡片架构，不发工具卡片
+  // Update 模式：message.patch 模拟流式，保留工具卡片
+  const isCardkitMode = config.streaming?.mode === "cardkit";
+  let cardkitCtrl: CardKitController | null = null;
+  let streamingCard = createStreamingCard(config.streaming, client, rootMsgId, replyContext, config.card_title);
+
+  if (isCardkitMode && !streamingCard) {
+    cardkitCtrl = new CardKitController({
+      client,
+      appId: replyContext.appId,
+      appSecret: replyContext.appSecret,
+      rootMsgId,
+      cardTitle: config.card_title ?? "Claude",
+      thinkingEnabled: config.streaming?.thinking_enabled === true,
+      context: replyContext,
+      intervalMs: config.streaming?.flush_interval_ms || 300,
+    });
+  }
 
   // 构建格式指导 system prompt（追加到 Claude Code 默认 system prompt 后面）
   const systemPrompt = config.format_guide?.enabled !== false
@@ -171,10 +189,12 @@ export async function runAgent(
     // 检查是否已中断
     if (abortSignal?.aborted) {
       logger.info("Agent aborted by user");
-      if (streamingCard) {
+      if (cardkitCtrl) {
+        await cardkitCtrl.abort("⏹ 任务已中断");
+      } else if (streamingCard) {
         await streamingCard.abort("⏹ 任务已中断");
       } else {
-        await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", replyContext);
+        await replyFinalCard(client, chatId, rootMsgId, "⏹ 任务已中断", replyContext, { cardTitle: config.card_title });
       }
       break;
     }
@@ -191,22 +211,30 @@ export async function runAgent(
       for (const block of blocks) {
         if (block.type === "text" && block.text) {
           textBuffer += block.text;
-          // 流式追加（首次 append 自动触发 start）
-          if (streamingCard) await streamingCard.append(block.text);
+          // CardKit 模式：单卡片流式追加
+          if (cardkitCtrl) await cardkitCtrl.append(block.text);
+          // Update 模式：流式追加
+          else if (streamingCard) await streamingCard.append(block.text);
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
+          // CardKit 模式：不发工具卡片（单卡片架构）
+          if (isCardkitMode) {
+            if (SILENT_TOOLS.has(block.name)) break;
+            logger.tool(block.name, formatInput(block.name, block.input ?? {}));
+            break;
+          }
           if (SILENT_TOOLS.has(block.name)) break;
           const label = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
           if (block.name === "AskUserQuestion") {
             const input = block.input as { questions?: Array<{ question: string }> };
             const questions = input.questions?.map(q => q.question).join("\n") ?? "";
-            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions, replyContext);
+            if (questions) await replyFinalCard(client, chatId, rootMsgId, questions, replyContext, { cardTitle: config.card_title });
             break;
           }
           const detail = formatInput(block.name, block.input ?? {});
           logger.tool(block.name, detail);
-          const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running", config.thinking_words);
+          const msgId = await sendToolCard(client, chatId, rootMsgId, label, detail, "running", block.name);
           toolMsgMap.set(block.id, { msgId, label, detail });
         }
       }
@@ -282,10 +310,14 @@ export async function runAgent(
         const completeOptions: CompleteOptions = {
           metadata,
           thinking,
+          cardTitle: config.card_title,
         };
 
-        if (streamingCard) {
-          // 流式完成：最终更新卡片（内部处理 overflow）
+        if (cardkitCtrl) {
+          // CardKit 模式：单卡片完成
+          await cardkitCtrl.complete(finalContent, completeOptions);
+        } else if (streamingCard) {
+          // Update 模式：最终更新卡片（内部处理 overflow）
           await streamingCard.complete(finalContent, completeOptions);
         } else {
           await replyFinalCard(client, chatId, rootMsgId, finalContent, replyContext, completeOptions);
