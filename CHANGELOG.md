@@ -7,23 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-27
+
 ### Added
 
-- Card table limit handling for Feishu messages (max 5 tables per card)
-  - `countTables()` function to accurately count tables in markdown (excludes code blocks)
-  - `splitMarkdownByTables()` to split markdown by table boundaries
-  - `CardTableConfig` for configurable thresholds (`max_tables_per_card`, `max_tables_split`)
-  - Tables >10 auto-write to document, 6-10 split into multiple cards
+- Streaming output support with two modes: CardKit (default) and Update
+  - **CardKit mode**: single-card architecture with state machine (idle → creating → streaming → completed), aligned with official openclaw-lark approach
+  - **Update mode**: message patch API with auto-fallback chain (cardkit → update → none)
+- Image resolver for external images (download and re-upload to Feishu CDN)
+  - Internal CDN domain skip list (feishucdn.com, larksuitecdn.com, etc.)
+- Configurable `card_title` for all streaming modes (default: "Claude")
+- Collapsible thinking section in CardKit complete output
+- Per-tool status words for tool cards (replaces random thinking words)
+- `prepublishOnly` script to package.json for safe npm publishing
+- Card footer metadata (model, tokens, duration) in streaming cards
+
+### Changed
+
+- Default streaming mode changed from `update` to `cardkit`
+- CardKit mode no longer sends separate tool call cards (single-card design)
+
+### Removed
+
+- `thinking_words` config option (replaced by per-tool status words)
 
 ### Fixed
 
-- Correct BlockType enum values to match official Feishu API docs
-  - TABLE: 24 → 31
-  - TABLE_CELL: 25 → 32
-  - IFRAME: 27 → 26
-  - IMAGE: 28 → 27
-  - VIEW: 29 → 33
-  - Add GRID (24) and GRID_COLUMN (25)
+- Correct CardKit API format (card_json type, IM message reply, sequence counter)
+- CardKit lazy card creation on first `append()` call
+- Image resolver CDN download failures with internal domain blacklist
+- ESM-compatible `__dirname` polyfill in guide.ts
+- Align all docx block structures with Feishu SDK types to resolve 1770024 error
 
 ## [0.3.0] - 2026-03-26
 
