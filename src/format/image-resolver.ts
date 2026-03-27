@@ -22,6 +22,9 @@ const IMAGE_UPLOAD_URL = "https://open.feishu.cn/open-apis/im/v1/images";
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 const DOWNLOAD_TIMEOUT_MS = 10000; // 10s
 
+// 飞书/Lark 内部 CDN 域名，这些图片需要登录态，外部无法下载
+const INTERNAL_DOMAINS = ["feishucdn.com", "larksuitecdn.com", "feishu.cn", "larksuite.com"];
+
 // ── 类型 ───────────────────────────────────────────────────
 
 export interface ImageResolveResult {
@@ -73,6 +76,17 @@ export async function resolveImages(
 
   // 3. 串行处理每张图片
   for (const { full, alt, url } of matches) {
+    // 跳过飞书/Lark 内部 CDN 图片（需要登录态，无法下载）
+    try {
+      const hostname = new URL(url).hostname;
+      if (INTERNAL_DOMAINS.some(d => hostname === d || hostname.endsWith(`.${d}`))) {
+        console.error(`[IMAGE] Skipped (internal CDN): ${url.slice(0, 80)}`);
+        continue;
+      }
+    } catch {
+      // URL 解析失败，继续尝试下载
+    }
+
     try {
       // 下载
       const buffer = await downloadExternalImage(url);

@@ -169,7 +169,7 @@ export interface CompleteOptions {
  */
 export interface IStreamingCard {
   start(): Promise<void>;
-  append(text: string): void;
+  append(text: string): Promise<void>;
   complete(finalContent: string, options?: CompleteOptions): Promise<void>;
   abort(message: string): Promise<void>;
   isDisabled(): boolean;
@@ -186,6 +186,7 @@ class UpdateStreamingCard implements IStreamingCard {
 
   private msgId: string | null = null;
   private _disabled = false;
+  private _started = false;
   private flushCtrl: FlushController;
 
   constructor(
@@ -233,6 +234,7 @@ class UpdateStreamingCard implements IStreamingCard {
 
       if (this.msgId) {
         this.flushCtrl.start();
+        this._started = true;
       } else {
         console.error("[STREAM] Failed to get message_id from initial card");
         this._disabled = true;
@@ -243,8 +245,12 @@ class UpdateStreamingCard implements IStreamingCard {
     }
   }
 
-  append(text: string): void {
+  async append(text: string): Promise<void> {
     if (this._disabled) return;
+    if (!this._started) {
+      await this.start();
+      if (this._disabled) return;
+    }
     this.flushCtrl.append(text);
   }
 
@@ -370,8 +376,10 @@ class CardKitStreamingCard implements IStreamingCard {
   private context: ReplyContext;
 
   private cardId: string | null = null;
-  private elementId: string | null = null;
+  private readonly streamElementId = "streaming_content";
+  private sequence = 0;
   private _disabled = false;
+  private _started = false;
   private flushCtrl: FlushController;
 
   constructor(
@@ -410,23 +418,25 @@ class CardKitStreamingCard implements IStreamingCard {
       // 0. Lazy 获取 tenant_access_token
       this.token = await getTenantAccessToken(this.appId, this.appSecret);
 
-      // 1. 创建 CardKit 卡片实体
-      const cardConfig = {
-        card_link: {
-          pc_url: "",
-          android_url: "",
-          ios_url: "",
+      // 1. 创建 CardKit 卡片实体（JSON 2.0 schema + streaming_mode）
+      const cardJson = {
+        schema: "2.0",
+        config: {
+          streaming_mode: true,
         },
         header: {
           title: { tag: "plain_text", content: "Claude" },
           template: "blue",
         },
-        elements: [
-          {
-            tag: "markdown",
-            content: "⏳ 思考中...",
-          },
-        ],
+        body: {
+          elements: [
+            {
+              tag: "markdown",
+              content: "⏳ 思考中...",
+              element_id: this.streamElementId,
+            },
+          ],
+        },
       };
 
       const createRes = await fetch(`${CARDKIT_BASE}/cards`, {
@@ -435,7 +445,10 @@ class CardKitStreamingCard implements IStreamingCard {
           "Authorization": `Bearer ${this.token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(cardConfig),
+        body: JSON.stringify({
+          type: "card_json",
+          data: JSON.stringify(cardJson),
+        }),
       });
 
       if (!createRes.ok) {
@@ -446,13 +459,12 @@ class CardKitStreamingCard implements IStreamingCard {
 
       const createData = await createRes.json() as any;
       this.cardId = createData.data?.card?.card_id;
-      this.elementId = createData.data?.card?.elements?.[0]?.element_id;
 
       if (!this.cardId) {
         throw new Error("CardKit: no card_id in response");
       }
 
-      console.error(`[CARDKIT] Card created: ${this.cardId}, element: ${this.elementId}`);
+      console.error(`[CARDKIT] Card created: ${this.cardId}, element: ${this.streamElementId}`);
 
       // 2. 发送消息引用该卡片
       const msgRes = await fetch(`${CARDKIT_BASE}/cards/${this.cardId}/messages`, {
@@ -474,12 +486,8 @@ class CardKitStreamingCard implements IStreamingCard {
       }
 
       // 3. 启动刷新控制器
-      if (this.elementId) {
-        this.flushCtrl.start();
-      } else {
-        console.error("[CARDKIT] No element_id, streaming disabled");
-        this._disabled = true;
-      }
+      this.flushCtrl.start();
+      this._started = true;
     } catch (error) {
       console.error("[CARDKIT] Start failed, falling back to update mode:", error);
       if (this.fallbackOnError) {
@@ -488,13 +496,17 @@ class CardKitStreamingCard implements IStreamingCard {
     }
   }
 
-  append(text: string): void {
+  async append(text: string): Promise<void> {
     if (this._disabled) return;
+    if (!this._started) {
+      await this.start();
+      if (this._disabled) return;
+    }
     this.flushCtrl.append(text);
   }
 
   private async performFlush(content: string): Promise<void> {
-    if (this._disabled || !this.cardId || !this.elementId) return;
+    if (this._disabled || !this.cardId) return;
 
     // 解析 thinking
     let displayContent = content;
@@ -512,16 +524,27 @@ class CardKitStreamingCard implements IStreamingCard {
     const optimized = optimizeForCard(displayContent);
     const truncated = optimized.length > 4000 ? optimized.slice(0, 4000) + "\n\n..." : optimized;
 
-    await fetch(`${CARDKIT_BASE}/cards/${this.cardId}/elements/${this.elementId}/stream`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.token}`,
-        "Content-Type": "application/json",
+    this.sequence++;
+    const res = await fetch(
+      `${CARDKIT_BASE}/cards/${this.cardId}/elements/${this.streamElementId}/content`,
+      {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: truncated,
+          sequence: this.sequence,
+        }),
       },
-      body: JSON.stringify({
-        stream_content: truncated,
-      }),
-    });
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[CARDKIT] Stream update failed: ${res.status} ${errText.slice(0, 200)}`);
+      throw new Error(`CardKit stream update failed: ${res.status}`);
+    }
   }
 
   async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
@@ -541,10 +564,29 @@ class CardKitStreamingCard implements IStreamingCard {
       content += `\n\n---\n${options.metadata}`;
     }
 
-    // 最终更新卡片内容
     const optimized = optimizeForCard(content);
 
     try {
+      // 最终更新卡片内容
+      const finalCardJson = {
+        schema: "2.0",
+        config: { streaming_mode: false },
+        header: {
+          title: { tag: "plain_text", content: "Claude" },
+          template: "blue",
+        },
+        body: {
+          elements: [
+            {
+              tag: "markdown",
+              content: optimized,
+              element_id: this.streamElementId,
+            },
+          ],
+        },
+      };
+
+      this.sequence++;
       await fetch(`${CARDKIT_BASE}/cards/${this.cardId}`, {
         method: "PUT",
         headers: {
@@ -552,12 +594,8 @@ class CardKitStreamingCard implements IStreamingCard {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          elements: [
-            {
-              tag: "markdown",
-              content: optimized,
-            },
-          ],
+          card: { type: "card_json", data: JSON.stringify(finalCardJson) },
+          sequence: this.sequence,
         }),
       });
     } catch (error) {
@@ -575,6 +613,25 @@ class CardKitStreamingCard implements IStreamingCard {
 
     const optimized = optimizeForCard(message);
     try {
+      const abortCardJson = {
+        schema: "2.0",
+        config: { streaming_mode: false },
+        header: {
+          title: { tag: "plain_text", content: "Claude" },
+          template: "blue",
+        },
+        body: {
+          elements: [
+            {
+              tag: "markdown",
+              content: optimized,
+              element_id: this.streamElementId,
+            },
+          ],
+        },
+      };
+
+      this.sequence++;
       await fetch(`${CARDKIT_BASE}/cards/${this.cardId}`, {
         method: "PUT",
         headers: {
@@ -582,12 +639,8 @@ class CardKitStreamingCard implements IStreamingCard {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          elements: [
-            {
-              tag: "markdown",
-              content: optimized,
-            },
-          ],
+          card: { type: "card_json", data: JSON.stringify(abortCardJson) },
+          sequence: this.sequence,
         }),
       });
     } catch (error) {
@@ -632,8 +685,8 @@ class FallbackStreamingCard implements IStreamingCard {
     }
   }
 
-  append(text: string): void {
-    this.active.append(text);
+  async append(text: string): Promise<void> {
+    await this.active.append(text);
   }
 
   async complete(finalContent: string, options?: CompleteOptions): Promise<void> {

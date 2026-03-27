@@ -118,11 +118,8 @@ export async function runAgent(
   // 构建 ReplyContext
   const replyContext = buildReplyContext(config, profile, cwd, chatId, rootMsgId);
 
-  // 创建流式卡片（如果配置启用）
+  // 创建流式卡片（如果配置启用，首次 append 时自动 start）
   const streamingCard = createStreamingCard(config.streaming, client, rootMsgId, replyContext);
-  if (streamingCard) {
-    await streamingCard.start();
-  }
 
   // 构建格式指导 system prompt（追加到 Claude Code 默认 system prompt 后面）
   const systemPrompt = config.format_guide?.enabled !== false
@@ -194,8 +191,8 @@ export async function runAgent(
       for (const block of blocks) {
         if (block.type === "text" && block.text) {
           textBuffer += block.text;
-          // 流式追加
-          streamingCard?.append(block.text);
+          // 流式追加（首次 append 自动触发 start）
+          if (streamingCard) await streamingCard.append(block.text);
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
