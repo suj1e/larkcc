@@ -882,39 +882,57 @@ async function batchCreateBlocks(
  * 通过 Descendants API 创建表格
  * 一次性创建 table + table_cell + cell text blocks
  */
+/**
+ * 通过 Descendants API 创建块（表格/高亮块通用）
+ * 带重试机制，处理文档刚创建未就绪导致的 404
+ */
+async function createDescendants(
+  token: string,
+  docId: string,
+  descendants: any[],
+  label: string,
+): Promise<void> {
+  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
+  const body = { children_id: [docId], descendants };
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await safeJsonParse(res, `Create ${label} descendants`) as {
+        code?: number;
+        msg?: string;
+      };
+
+      if (data.code !== 0) {
+        throw new Error(`API error (${data.code}): ${data.msg}`);
+      }
+      return; // 成功
+    } catch (error) {
+      if (attempt < 2) {
+        console.warn(`[DOC] ${label} descendants failed (attempt ${attempt}), retrying in 1s... docId=${docId}`);
+        await new Promise(r => setTimeout(r, 1000));
+      } else {
+        console.error(`[DOC] ${label} descendants failed after 2 attempts, docId=${docId}:`, error);
+        throw error;
+      }
+    }
+  }
+}
+
 async function createTableDescendants(
   token: string,
   docId: string,
   table: TableDescendants
 ): Promise<void> {
-  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
-  const body = {
-    children_id: [docId],
-    descendants: [
-      table.tableBlock,
-      ...table.cellDescendants,
-    ],
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await safeJsonParse(res, "Create table descendants") as {
-    code?: number;
-    msg?: string;
-  };
-
-  if (data.code !== 0) {
-    console.error(`[DOC] Table API error response:`, JSON.stringify(data, null, 2));
-    console.error(`[DOC] Table payload (truncated):`, JSON.stringify(table.tableBlock, null, 2).slice(0, 500));
-    throw new Error(`Create table failed (${data.code}): ${data.msg}`);
-  }
+  await createDescendants(token, docId, [table.tableBlock, ...table.cellDescendants], "table");
 }
 
 /**
@@ -926,34 +944,7 @@ async function createCalloutDescendants(
   docId: string,
   callout: CalloutDescendants
 ): Promise<void> {
-  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
-  const body = {
-    children_id: [docId],
-    descendants: [
-      callout.calloutBlock,
-      ...callout.contentDescendants,
-    ],
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await safeJsonParse(res, "Create callout descendants") as {
-    code?: number;
-    msg?: string;
-  };
-
-  if (data.code !== 0) {
-    console.error(`[DOC] Callout API error response:`, JSON.stringify(data, null, 2));
-    console.error(`[DOC] Callout payload:`, JSON.stringify(callout.calloutBlock, null, 2).slice(0, 500));
-    throw new Error(`Create callout failed (${data.code}): ${data.msg}`);
-  }
+  await createDescendants(token, docId, [callout.calloutBlock, ...callout.contentDescendants], "callout");
 }
 
 /**
