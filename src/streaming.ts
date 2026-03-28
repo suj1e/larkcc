@@ -20,6 +20,7 @@ import type { CardBuildOptions } from "./feishu.js";
 
 const LONG_GAP_MS = 2000;   // 2 秒无新内容，强制刷新
 const GAP_CHECK_INTERVAL = 500; // 每 500ms 检查一次长间隔
+const HEARTBEAT_MS = 15000;  // 15 秒无 flush，发送心跳防止 CardKit 流式超时
 const TRUNCATE_LIMIT = 4000;
 
 export interface FlushControllerOptions {
@@ -140,7 +141,14 @@ export class FlushController {
 
   private checkLongGap(): void {
     if (this.stopped || this.flushing) return;
-    if (Date.now() - this.lastAppendTime > LONG_GAP_MS) {
+    const now = Date.now();
+    // 15s 心跳：即使 buffer 无变化也 flush 一次，防止 CardKit 流式超时
+    if (now - this.lastFlushTime > HEARTBEAT_MS) {
+      void this.doFlush(true);
+      return;
+    }
+    // 2s 长间隔：有未发送内容时强制刷新
+    if (now - this.lastAppendTime > LONG_GAP_MS) {
       if (this.buffer.length > this.sentLength) {
         void this.doFlush(false);
       }
