@@ -1105,7 +1105,7 @@ function buildMessageLink(chatId: string, messageId: string): string {
  * 使用本地注册表追踪文档，按创建时间排序，删除超出数量的旧文档
  * 注意：docx API 没有 DELETE 接口，需要使用 drive API 删除
  */
-async function cleanupOldDocuments(
+export async function cleanupOldDocuments(
   token: string,
   maxDocs: number,
   profile: string

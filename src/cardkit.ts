@@ -22,7 +22,7 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
 import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
-import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument } from "./feishu.js";
+import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
 import type { ReplyContext } from "./feishu.js";
 import type { CompleteOptions, FlushControllerOptions } from "./streaming.js";
 import { FlushController } from "./streaming.js";
@@ -433,11 +433,25 @@ export class CardKitController {
       );
 
       const { docUrl, docId } = await createOverflowDocument(token, title, rawContent, originalMessage, meta);
+
       registerDocument(docId, this.context.profile);
 
       let cardContent = `📝 内容较长，已写入云文档：[${title}](${docUrl})`;
       if (options?.metadata) {
         cardContent += `\n\n---\n${options.metadata}`;
+      }
+
+      // 清理旧文档（如果启用）
+      const cleanupConfig = this.context.overflow.document.cleanup;
+      if (cleanupConfig?.enabled) {
+        const cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs, this.context.profile);
+        if (cleanupConfig.notify && (cleanupResult.deleted > 0 || cleanupResult.failed > 0)) {
+          if (cleanupResult.failed > 0) {
+            cardContent += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档，${cleanupResult.failed} 个删除失败`;
+          } else {
+            cardContent += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档（保留最近 ${cleanupConfig.max_docs} 个）`;
+          }
+        }
       }
 
       const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
