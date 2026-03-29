@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-29
+
+### Added
+
+- MCP document creation: use Feishu MCP service (`mcp.feishu.cn`) as primary path for creating cloud documents, with block API as fallback for non-table content
+- Waiting card UX: shows "writing to document..." placeholder before document creation, updates to doc link after completion (both CardKit and non-streaming paths)
+- Dynamic help text: `/help` now generates command list from `BUILTIN_EXEC` and `DEFAULT_PROMPTS` instead of hardcoded strings
+- Architecture references in CONTRIBUTING.md (openclaw-lark, larksuite/cli, Feishu Block API)
+
+### Changed
+
+- Document header: use list format with bold labels, divider between quote and metadata, local timezone instead of UTC
+- Session ID: show "首次对话" for first conversation instead of empty value
+- Rewrite README: 1000+ lines → 221 lines, Chinese-only, concise structure
+- Refactor block types: replace Descendants pattern with CreateData pattern (`CalloutCreateData`, `TableCreateData`)
+
+### Fixed
+
+- Add MCP HTTP status code validation and typed response parsing
+- Fix `card_title` appearing twice in config example
+
+### Removed
+
+- Delete unused table creation functions (`createTableViaChildren`, `createTableChunk`, `getTableCellIds`, `concurrentExec` helper)
+- Remove `upmd` slash command (too generic to be useful)
+- Remove English documentation from README (Chinese-only now)
+
 ## [0.6.2] - 2026-03-28
 
 ### Fixed
