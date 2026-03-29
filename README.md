@@ -209,7 +209,6 @@ profiles:
 ## 相关资源
 
 - [飞书文档块 API](https://feishu.apifox.cn/doc-1950637) — 文档块类型、属性、代码语言枚举
-- [飞书 MCP 服务](https://mcp.feishu.cn) — 文档创建 MCP 端点
 
 ## License
 
