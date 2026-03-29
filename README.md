@@ -86,7 +86,6 @@ larkcc --help           # 查看所有命令
 | `/check` | 综合检查（类型/lint/测试） |
 | `/security` | 安全漏洞扫描 |
 | `/deps` | 检查过期依赖 |
-| `/upmd` | 更新 README.md 和 CLAUDE.md |
 | `/build` | 构建项目 |
 | `/install` | 安装依赖 |
 | `/run [script]` | 运行 npm script |

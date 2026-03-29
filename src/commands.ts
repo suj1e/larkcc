@@ -122,38 +122,49 @@ export function checkExecSecurity(
 
 // ── 命令处理 ──────────────────────────────────────────────────
 
-const HELP_TEXT = `可用命令：
+function buildHelpText(customCommands?: Record<string, string>): string {
+  // EXEC 快捷命令（从 BUILTIN_EXEC 提取，只显示长名）
+  const execNames = [...new Set(Object.values(BUILTIN_EXEC).map(fn => {
+    return Object.entries(BUILTIN_EXEC).filter(([, f]) => f === fn).map(([k]) => k);
+  }).flat())].filter(k => k.length > 1);
+
+  const execLines = execNames.map(k => {
+    const aliases = Object.entries(BUILTIN_EXEC)
+      .filter(([name, fn]) => fn === BUILTIN_EXEC[k] && name !== k)
+      .map(([name]) => `/${name}`);
+    const aliasStr = aliases.length > 0 ? `、${aliases.join('、')}` : '';
+    const desc = k === 'status' ? 'git status + 最近提交'
+      : k === 'diff' ? 'git diff'
+      : k === 'log' ? 'git log'
+      : k === 'branch' ? '分支列表'
+      : k === 'pwd' ? '当前目录 + 文件列表'
+      : k === 'ps' ? '运行中的进程'
+      : k;
+    return `  /${k}${aliasStr}    ${desc}`;
+  }).join('\n');
+
+  // PROMPT 命令（从 default-prompts.yml + 用户自定义合并）
+  const allPromptCmds = [
+    ...Object.keys(DEFAULT_PROMPTS),
+    ...(customCommands ? Object.keys(customCommands) : []),
+  ].filter((v, i, a) => a.indexOf(v) === i);
+
+  const promptLines = allPromptCmds.map(k => `  /${k}`).join('\n');
+
+  return `可用命令：
 
 ⚡ 快速执行（不走 Claude）：
-  /s /status    git status + 最近提交
-  /d /diff      git diff
-  /l /log       git log
-  /b /branch    分支列表
-  /pwd          当前目录 + 文件列表
-  /ps           运行中的进程
+${execLines}
 
 💬 Claude 快捷方式：
-  /review           代码 review
-  /fix              修复报错
-  /doc              生成/更新文档
-  /test [文件]      生成单测
-  /explain [文件]   解释代码
-  /refactor [文件]  重构
-  /commit           生成 commit message
-  /pr               生成 PR 描述
-  /todo             整理 TODO 清单
-  /summary          生成工作日报
-  /bsx [内容]       头脑风暴，不动代码
-  /upmd             更新 README.md 和 CLAUDE.md
-  /build [命令]     构建项目
-  /install          安装依赖
-  /run [script]     运行 npm script
+${promptLines}
 
 📁 多文件模式：
   /mf start         开始多文件模式
   /mf done          结束并发送所有文件
 
 自定义命令在 ~/.larkcc/config.yml 的 commands 块配置。`;
+}
 
 // ── 主处理函数 ────────────────────────────────────────────────
 
@@ -182,7 +193,7 @@ export function parseCommand(
   const args  = parts.slice(1).join(" ");
 
   if (cmd === "help" || cmd === "h") {
-    return { type: "help", output: HELP_TEXT };
+    return { type: "help", output: buildHelpText(context.customCommands) };
   }
 
   // 多文件模式命令
