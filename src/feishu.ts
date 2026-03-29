@@ -3,9 +3,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { OverflowConfig, CardTableConfig } from "./config.js";
-import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType } from "./format/index.js";
+import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType, parseInlineText } from "./format/index.js";
 import { buildThinkingPanel } from "./format/duration.js";
-import type { Block, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./format/index.js";
+import type { Block, DocumentBlockItem, CalloutCreateData, TableCreateData } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
 
@@ -344,7 +344,9 @@ export async function prepareOverflowContext(
   const token = await getTenantAccessToken(context.appId, context.appSecret);
 
   const now = new Date();
-  const datetime = now.toISOString().replace("T", " ").slice(0, 19);
+  const y = now.getFullYear(), mo = String(now.getMonth() + 1).padStart(2, "0"), d = String(now.getDate()).padStart(2, "0");
+  const h = String(now.getHours()).padStart(2, "0"), mi = String(now.getMinutes()).padStart(2, "0"), s = String(now.getSeconds()).padStart(2, "0");
+  const datetime = `${y}-${mo}-${d} ${h}:${mi}:${s}`;
   const title = context.overflow.document.title_template
     .replace("{profile}", context.profile)
     .replace("{cwd}", context.cwd)
@@ -374,6 +376,32 @@ export async function prepareOverflowContext(
   return { token, title, originalMessage, meta };
 }
 
+/**
+ * 尝试更新等待卡片内容，失败则 fallback 发新消息
+ * 返回 true 表示消息已投递（patch 或新消息），false 表示未投递
+ */
+async function patchOrCreateCard(
+  client: lark.Client,
+  waitingMsgId: string | undefined,
+  rootMsgId: string,
+  content: string,
+): Promise<boolean> {
+  if (waitingMsgId) {
+    try {
+      const card = buildMarkdownCard(content);
+      await (client.im.message as any).patch({
+        path: { message_id: waitingMsgId },
+        data: { content: JSON.stringify(card) },
+      });
+      return true;
+    } catch {
+      // patch 失败，fallback 到发新消息
+    }
+  }
+  await sendMessageChunk(client, rootMsgId, content);
+  return true;
+}
+
 async function replyWithDocument(
   client: lark.Client,
   chatId: string,
@@ -381,6 +409,19 @@ async function replyWithDocument(
   markdown: string,
   context: ReplyContext
 ): Promise<void> {
+  // 先发等待卡片
+  let waitingMsgId: string | undefined;
+  try {
+    const waitingCard = buildMarkdownCard("📝 内容较长，正在写入云文档...");
+    const waitRes = await (client.im.message as any).reply({
+      path: { message_id: rootMsgId },
+      data: { content: JSON.stringify(waitingCard), msg_type: "interactive", reply_in_thread: false },
+    });
+    waitingMsgId = waitRes?.data?.message_id;
+  } catch {
+    // 等待卡片发送失败不影响主流程
+  }
+
   try {
     const { token, title, originalMessage, meta } = await prepareOverflowContext(client, rootMsgId, context);
 
@@ -410,12 +451,15 @@ async function replyWithDocument(
       }
     }
 
-    // 回复文档链接
-    await sendMessageChunk(client, rootMsgId, replyMsg);
+    // 更新等待卡片为文档链接
+    await patchOrCreateCard(client, waitingMsgId, rootMsgId, replyMsg);
   } catch (error) {
     // 写文档失败，回退到分片发送
     console.error("Failed to create document:", error);
-    await sendMessageChunk(client, rootMsgId, `❌ 写入云文档失败：${error}，回退到分片发送`);
+    const errorMsg = `❌ 写入云文档失败：${error}，回退到分片发送`;
+    const patched = await patchOrCreateCard(client, waitingMsgId, rootMsgId, errorMsg);
+    // 等待卡片已更新为错误信息时，不再发分片（语义矛盾）
+    if (patched) return;
     const chunks = splitMarkdown(markdown, CHUNK_SIZE);
     for (let i = 0; i < chunks.length; i++) {
       const content = `**(${i + 1}/${chunks.length})**\n${chunks[i]}`;
@@ -734,6 +778,33 @@ export async function createOverflowDocument(
   originalMessage: string,
   meta: DocumentMeta
 ): Promise<{ docUrl: string; docId: string; warnings: string[] }> {
+  // 优先使用 MCP 创建（服务端处理 markdown → block 转换，表格/callout 均支持）
+  try {
+    // 拼接文档头部（原始消息引用 + 列表元数据）
+    const headerLines: string[] = [];
+    if (originalMessage) {
+      headerLines.push(`> ${originalMessage}`);
+      headerLines.push('');
+      headerLines.push('---');
+      headerLines.push('');
+    }
+    headerLines.push(`- 📁 **工作目录**: ${meta.cwd}`);
+    headerLines.push(`- 🤖 **机器人**: ${meta.profile}`);
+    headerLines.push(`- 🔗 **会话ID**: ${meta.sessionId || "首次对话"}`);
+    headerLines.push(`- 📅 **时间**: ${meta.datetime}`);
+    headerLines.push('');
+    const fullMarkdown = headerLines.join('\n') + '\n' + markdown;
+
+    const result = await createDocViaMCP(token, title, fullMarkdown);
+    if (result) {
+      console.error(`[DOC] Document created via MCP: ${result.docId}`);
+      return result;
+    }
+  } catch (error) {
+    console.error(`[DOC] MCP creation failed, falling back to block API:`, error);
+  }
+
+  // Fallback: 逐块写入（表格降级为代码块）
   // 1. 将 markdown 转换为文档块
   const { items } = markdownToBlocks(markdown, originalMessage, meta);
 
@@ -767,7 +838,7 @@ export async function createOverflowDocument(
     const batchTypes = simpleBatch.map(b => b.block_type);
 
     try {
-      await batchCreateBlocks(token, docId, simpleBatch, index);
+      await batchCreateBlocks(token, docId, docId, simpleBatch, index);
       isFirstBatch = false;
     } catch (error) {
       const errMsg = `Batch ${batchIndex} 写入失败（${simpleBatch.length} 个块），已跳过`;
@@ -793,17 +864,14 @@ export async function createOverflowDocument(
 
       case "table":
         await flushSimpleBatch();
-        try {
-          await createTableDescendants(token, docId, item.data);
-        } catch (error) {
-          console.error(`[DOC] Table descendants failed at item ${i}:`, error);
-          // 降级为代码块：包含原始 Markdown 保留可读性
-          const tableInfo = item.data.tableBlock.table.property;
+        // block API 不支持通过 children 创建表格（API 9499），直接降级为代码块
+        {
+          const tableProp = item.data.property;
           const rawMd = item.data.rawMarkdown ?? "";
-          writeWarnings.push(`表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列）`);
+          writeWarnings.push(`表格渲染失败（${tableProp.row_size}行 × ${tableProp.column_size}列）`);
           const fallbackContent = rawMd
-            ? `⚠️ 表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列），原始内容：\n${rawMd}`
-            : `⚠️ 表格渲染失败（${tableInfo.row_size}行 × ${tableInfo.column_size}列）`;
+            ? `⚠️ 表格渲染失败（${tableProp.row_size}行 × ${tableProp.column_size}列），原始内容：\n${rawMd}`
+            : `⚠️ 表格渲染失败（${tableProp.row_size}行 × ${tableProp.column_size}列）`;
           simpleBatch.push({
             block_type: BlockType.CODE,
             code: {
@@ -819,17 +887,14 @@ export async function createOverflowDocument(
       case "callout":
         await flushSimpleBatch();
         try {
-          await createCalloutDescendants(token, docId, item.data);
+          await createCalloutViaChildren(token, docId, item.data);
         } catch (error) {
-          console.error(`[DOC] Callout descendants failed at item ${i}:`, error);
+          console.error(`[DOC] Callout creation failed at item ${i}:`, error);
           writeWarnings.push("高亮块渲染失败");
           // 降级为普通引用块
-          const calloutTexts = item.data.contentDescendants
-            .map(d => d.text?.elements?.map(e => e.text_run?.content ?? "").join("") ?? "")
-            .filter(Boolean);
           simpleBatch.push({
             block_type: BlockType.QUOTE,
-            quote: { elements: [{ text_run: { content: calloutTexts.join("\n") } }] },
+            quote: { elements: [{ text_run: { content: item.data.textLines.join("\n") } }] },
           });
         }
         break;
@@ -848,103 +913,145 @@ export async function createOverflowDocument(
 }
 
 /**
+ * 通过飞书 MCP 服务创建文档
+ * 参考：https://github.com/larksuite/cli（X-Lark-MCP-TAT 认证、JSON-RPC 协议）
+ * MCP 服务端处理 markdown → block 转换（包括表格、callout 等）
+ */
+async function createDocViaMCP(
+  token: string,
+  title: string,
+  markdown: string,
+): Promise<{ docUrl: string; docId: string; warnings: string[] }> {
+  const body = {
+    jsonrpc: "2.0",
+    id: crypto.randomUUID(),
+    method: "tools/call",
+    params: {
+      name: "create-doc",
+      arguments: { title, markdown },
+    },
+  };
+
+  const res = await fetch("https://mcp.feishu.cn/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Lark-MCP-TAT": token,
+      "X-Lark-MCP-Allowed-Tools": "create-doc",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`MCP HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+
+  const data = await res.json() as { error?: { code: number; message: string }; result?: { content?: Array<{ text?: string }> } };
+
+  if (data.error) {
+    throw new Error(`MCP error (${data.error.code}): ${data.error.message}`);
+  }
+
+  const content = data.result?.content?.[0]?.text;
+  if (!content) {
+    throw new Error("MCP response missing content");
+  }
+
+  const docInfo = JSON.parse(content) as {
+    doc_id?: string;
+    doc_url?: string;
+    message?: string;
+  };
+
+  if (!docInfo.doc_id) {
+    throw new Error(`MCP did not return doc_id: ${docInfo.message ?? content}`);
+  }
+
+  return {
+    docUrl: docInfo.doc_url ?? `https://feishu.cn/docx/${docInfo.doc_id}`,
+    docId: docInfo.doc_id,
+    warnings: [],
+  };
+}
+
+/**
  * 批量创建文档块（children API）
+ * 返回服务端分配的 block_id 列表
  */
 async function batchCreateBlocks(
   token: string,
   docId: string,
+  parentId: string,
   children: Block[],
   index: number
-): Promise<void> {
-  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/children`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ children, index }),
-  });
+): Promise<string[]> {
+  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${parentId}/children`;
+  const maxRetries = 3;
 
-  const data = await safeJsonParse(res, "Batch create blocks") as {
-    code?: number;
-    msg?: string;
-    data?: { children?: Array<{ block_id?: string; block_type?: number }> };
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ children, index }),
+    });
+
+    // 429 限流，等待后重试
+    if (res.status === 429 && attempt < maxRetries) {
+      const delay = attempt * 2000;
+      console.warn(`[DOC] Rate limited (429), retry ${attempt}/${maxRetries} after ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+      continue;
+    }
+
+    const data = await safeJsonParse(res, "Batch create blocks") as {
+      code?: number;
+      msg?: string;
+      data?: { children?: Array<{ block_id?: string; block_type?: number }> };
+    };
+
+    if (data.code !== 0) {
+      console.error(`[DOC] API error response:`, JSON.stringify(data, null, 2));
+      throw new Error(`Write content failed (${data.code}): ${data.msg}`);
+    }
+
+    return data.data?.children?.map(c => c.block_id ?? "").filter(Boolean) ?? [];
+  }
+
+  throw new Error("Write content failed after rate limit retries");
+}
+
+/**
+ * 通过多步 children API 创建高亮块
+ * 1. 创建 callout 容器块
+ * 2. 创建文本子块作为 callout 的 children
+ */
+async function createCalloutViaChildren(
+  token: string,
+  docId: string,
+  calloutData: CalloutCreateData,
+): Promise<void> {
+  // Step 1: 创建 callout 容器块
+  const calloutBlock: Block = {
+    block_type: 19,
+    callout: calloutData.callout,
   };
 
-  if (data.code !== 0) {
-    console.error(`[DOC] API error response:`, JSON.stringify(data, null, 2));
-    throw new Error(`Write content failed (${data.code}): ${data.msg}`);
+  const calloutIds = await batchCreateBlocks(token, docId, docId, [calloutBlock], -1);
+  const calloutId = calloutIds[0];
+  if (!calloutId) throw new Error("Failed to get callout block_id");
+
+  // Step 2: 创建文本子块
+  if (calloutData.textLines.length > 0) {
+    const textBlocks: Block[] = calloutData.textLines.map(line => ({
+      block_type: 2,
+      text: { elements: parseInlineText(line) },
+    }));
+    await batchCreateBlocks(token, docId, calloutId, textBlocks, -1);
   }
-}
-
-/**
- * 通过 Descendants API 创建表格
- * 一次性创建 table + table_cell + cell text blocks
- */
-/**
- * 通过 Descendants API 创建块（表格/高亮块通用）
- * 带重试机制，处理文档刚创建未就绪导致的 404
- */
-async function createDescendants(
-  token: string,
-  docId: string,
-  descendants: any[],
-  label: string,
-): Promise<void> {
-  const url = `https://open.feishu.cn/open-apis/docx/v1/documents/${docId}/blocks/${docId}/descendants`;
-  const body = { children_id: [docId], descendants };
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      const data = await safeJsonParse(res, `Create ${label} descendants`) as {
-        code?: number;
-        msg?: string;
-      };
-
-      if (data.code !== 0) {
-        throw new Error(`API error (${data.code}): ${data.msg}`);
-      }
-      return; // 成功
-    } catch (error) {
-      if (attempt < 2) {
-        console.warn(`[DOC] ${label} descendants failed (attempt ${attempt}), retrying in 1s... docId=${docId}`);
-        await new Promise(r => setTimeout(r, 1000));
-      } else {
-        console.error(`[DOC] ${label} descendants failed after 2 attempts, docId=${docId}:`, error);
-        throw error;
-      }
-    }
-  }
-}
-
-async function createTableDescendants(
-  token: string,
-  docId: string,
-  table: TableDescendants
-): Promise<void> {
-  await createDescendants(token, docId, [table.tableBlock, ...table.cellDescendants], "table");
-}
-
-/**
- * 通过 Descendants API 创建高亮块
- * 一次性创建 callout + content text blocks
- */
-async function createCalloutDescendants(
-  token: string,
-  docId: string,
-  callout: CalloutDescendants
-): Promise<void> {
-  await createDescendants(token, docId, [callout.calloutBlock, ...callout.contentDescendants], "callout");
 }
 
 /**

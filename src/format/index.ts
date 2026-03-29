@@ -58,7 +58,7 @@ export {
   buildImageBlock,
   buildTableBlock,
 } from "./builder.js";
-export type { Block, TextElement, TextElementStyle, TableData, DocumentBlockItem, CalloutDescendants, TableDescendants } from "./builder.js";
+export type { Block, TextElement, TextElementStyle, TableData, DocumentBlockItem, CalloutCreateData, TableCreateData, CellData } from "./builder.js";
 
 // 卡片优化
 export { optimizeForCard } from "./card-optimize.js";

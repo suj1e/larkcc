@@ -65,6 +65,16 @@ We recommend using [Conventional Commits](https://www.conventionalcommits.org/):
 - `test:` - Adding or updating tests
 - `chore:` - Build process or tooling changes
 
+## Architecture References
+
+The following upstream projects informed key architectural decisions:
+
+| Project | Reference Area |
+|---------|---------------|
+| [openclaw-lark](https://github.com/larksuite/openclaw-lark) | CardKit streaming: single-card architecture, mutex guard, two-step close, interrupt handling, overflow flow |
+| [larksuite/cli](https://github.com/larksuite/cli) | MCP integration: `X-Lark-MCP-TAT` auth header, JSON-RPC protocol, `create-doc` tool invocation |
+| [飞书文档块 API](https://feishu.apifox.cn/doc-1950637) | Block types, properties, code language enum |
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.

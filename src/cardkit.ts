@@ -421,6 +421,13 @@ export class CardKitController {
     options?: CompleteOptions,
   ): Promise<void> {
     try {
+      // 先更新卡片显示"正在生成文档..."
+      const waitingCardJson = this.buildFinalCard("📝 内容较长，正在写入云文档...");
+      await this.withMutex(async () => {
+        this.sequence++;
+        await this.updateCard(waitingCardJson);
+      });
+
       const { token, title, originalMessage, meta } = await prepareOverflowContext(
         this.client, this.rootMsgId, this.context,
       );

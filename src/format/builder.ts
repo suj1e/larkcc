@@ -60,66 +60,66 @@ export interface Block {
   equation?: { elements: Array<{ equation: { content: string } }> };
   divider?: {};
   image?: { token: string };
+  callout?: { background_color: number; border_color: number };
+  table?: {
+    property: {
+      row_size: number;
+      column_size: number;
+      column_width: number[];
+      merge_info?: Array<{ row_span?: number; col_span?: number }>;
+    };
+    /** cell block_id 引用（仅用于查询/更新，创建时不需要） */
+    cells?: string[];
+  };
+  table_cell?: {};
 }
 
-// ── Descendants API 类型（用于表格、高亮块） ────────────────────────
+// ── 复杂块类型（用于多步 children API 创建） ────────────────────────
 
 /**
- * 高亮块 Descendants 结构
- * callout 是容器块，内容通过子块实现
+ * 高亮块创建数据
+ * 只携带结构化数据，block_id 由服务端分配
  */
-export interface CalloutDescendants {
-  calloutBlock: {
-    block_type: 19;
-    block_id: string;
-    children: string[];
-    callout: {
-      background_color: number;
-      border_color: number;
-    };
-  };
-  contentDescendants: Array<{
-    block_type: 2;
-    block_id: string;
-    text: { elements: TextElement[] };
-  }>;
+export interface CalloutCreateData {
+  callout: { background_color: number; border_color: number };
+  textLines: string[];
+  /** 原始 Markdown 文本（用于降级时保留可读性） */
+  rawMarkdown?: string;
 }
 
 /**
- * 表格 Descendants 结构
- * table.cells 是 block ID 引用，table_cell 是空壳容器，内容通过子块实现
+ * 单元格数据
  */
-export interface TableDescendants {
-  tableBlock: {
-    block_type: 31;
-    block_id: string;
-    children: string[];
-    table: {
-      property: {
-        row_size: number;
-        column_size: number;
-        column_width: number[];
-        merge_info?: Array<{ row_span?: number; col_span?: number }>;
-      };
-      cells: string[];
-    };
+export interface CellData {
+  content: string;
+  merge?: { row_span: number; col_span: number };
+}
+
+/**
+ * 表格创建数据
+ * 只携带结构化数据，block_id 由服务端分配
+ */
+export interface TableCreateData {
+  property: {
+    row_size: number;
+    column_size: number;
+    column_width: number[];
+    merge_info?: Array<{ row_span: number; col_span: number }>;
   };
-  cellDescendants: Array<
-    | { block_type: 32; block_id: string; children: string[]; table_cell: {} }
-    | { block_type: 2; block_id: string; text: { elements: TextElement[] } }
-  >;
+  /** 所有单元格（按行优先顺序），含被合并的占位格 */
+  cells: CellData[];
   /** 原始 Markdown 文本（用于降级时保留可读性） */
   rawMarkdown?: string;
 }
 
 /**
  * 文档块统一条目
- * 保持原始顺序，区分简单块和需要 Descendants API 的复杂块
+ * 保持原始顺序，区分简单块和需要多步创建的复杂块
  */
 export type DocumentBlockItem =
   | { type: "simple"; block: Block }
-  | { type: "table"; data: TableDescendants }
-  | { type: "callout"; data: CalloutDescendants };
+  | { type: "table"; data: TableCreateData }
+  | { type: "callout"; data: CalloutCreateData };
 
 // ── 颜色映射 ───────────────────────────────────────────────────
 
@@ -435,30 +435,14 @@ export function buildEquationBlock(latex: string): Block {
 }
 
 /**
- * 构建高亮块（Descendants API）
- * callout 是容器块，没有 elements，内容通过子块实现
+ * 构建高亮块数据（用于多步 children API 创建）
  */
-export function buildCalloutBlock(type: CalloutType, content: string): CalloutDescendants {
+export function buildCalloutBlock(type: CalloutType, content: string): CalloutCreateData {
   const { bg, border } = CalloutColorMap[type];
-  const calloutId = crypto.randomUUID();
-
-  // 内容按行拆分为多个 TEXT 子块
-  const lines = content.split("\n");
-  const textIds = lines.map((_, i) => `${calloutId}-text-${i}`);
-  const textBlocks = lines.map((line, i) => ({
-    block_type: BlockType.TEXT,
-    block_id: textIds[i],
-    text: { elements: parseInlineText(line) },
-  }));
-
+  const textLines = content.split("\n");
   return {
-    calloutBlock: {
-      block_type: BlockType.CALLOUT,
-      block_id: calloutId,
-      children: textIds,
-      callout: { background_color: bg, border_color: border },
-    },
-    contentDescendants: textBlocks,
+    callout: { background_color: bg, border_color: border },
+    textLines,
   };
 }
 
@@ -508,29 +492,15 @@ function calculateTextWidth(text: string): number {
 }
 
 /**
- * 构建表格 Descendants 结构
- *
- * 表格创建流程：
- * 1. table.cells 是 string[]（block ID 引用），不是 Block 对象
- * 2. table_cell 是空壳容器 {}，内容通过子块实现
- * 3. 使用 Descendants API 一次性创建表格 + 单元格 + 单元格内容
+ * 构建表格创建数据（用于多步 children API 创建）
  */
-export function buildTableBlock(data: TableData): TableDescendants {
+export function buildTableBlock(data: TableData): TableCreateData {
   const { rows } = data;
-  const tableId = crypto.randomUUID();
 
   if (rows.length === 0 || rows[0].length === 0) {
     return {
-      tableBlock: {
-        block_type: BlockType.TABLE,
-        block_id: tableId,
-        children: [],
-        table: {
-          property: { row_size: 0, column_size: 0, column_width: [] },
-          cells: [],
-        },
-      },
-      cellDescendants: [],
+      property: { row_size: 0, column_size: 0, column_width: [] },
+      cells: [],
     };
   }
 
@@ -541,31 +511,19 @@ export function buildTableBlock(data: TableData): TableDescendants {
   // 追踪被合并的单元格位置
   const mergedCells = new Set<string>();
 
-  // 生成所有单元格的 descendants
-  const cellDescendants: TableDescendants["cellDescendants"] = [];
-  const cellIds: string[] = [];
+  // 收集所有单元格数据（按行优先顺序）
+  const cells: CellData[] = [];
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     for (let colIndex = 0; colIndex < rows[rowIndex].length; colIndex++) {
       const cell = rows[rowIndex][colIndex];
       const key = `${rowIndex}-${colIndex}`;
 
-      // 跳过被合并的单元格（仍然占位在 cells[] 中）
+      // 被合并的单元格作为占位
       if (mergedCells.has(key)) {
-        cellIds.push(`${tableId}-cell-${rowIndex}-${colIndex}`);
-        // 被合并的单元格仍然需要创建 table_cell（占位）
-        cellDescendants.push({
-          block_type: BlockType.TABLE_CELL,
-          block_id: `${tableId}-cell-${rowIndex}-${colIndex}`,
-          children: [],
-          table_cell: {},
-        });
+        cells.push({ content: "" });
         continue;
       }
-
-      const cellId = `${tableId}-cell-${rowIndex}-${colIndex}`;
-      const textId = `${cellId}-txt`;
-      cellIds.push(cellId);
 
       // 处理合并
       if (cell.merge && (cell.merge.colspan > 1 || cell.merge.rowspan > 1)) {
@@ -584,19 +542,11 @@ export function buildTableBlock(data: TableData): TableDescendants {
         }
       }
 
-      // table_cell 容器
-      cellDescendants.push({
-        block_type: BlockType.TABLE_CELL,
-        block_id: cellId,
-        children: [textId],
-        table_cell: {},
-      });
-
-      // 单元格文本内容
-      cellDescendants.push({
-        block_type: BlockType.TEXT,
-        block_id: textId,
-        text: { elements: parseInlineText(cell.content.trim()) },
+      cells.push({
+        content: cell.content.trim(),
+        ...(cell.merge && (cell.merge.colspan > 1 || cell.merge.rowspan > 1)
+          ? { merge: { row_span: cell.merge.rowspan || 1, col_span: cell.merge.colspan || 1 } }
+          : {}),
       });
     }
   }
@@ -646,20 +596,12 @@ export function buildTableBlock(data: TableData): TableDescendants {
   }
 
   return {
-    tableBlock: {
-      block_type: BlockType.TABLE,
-      block_id: tableId,
-      children: cellIds,
-      table: {
-        property: {
-          row_size: rowSize,
-          column_size: columnSize,
-          column_width: columnWidths,
-          ...(mergeInfo.length > 0 ? { merge_info: mergeInfo } : {}),
-        },
-        cells: cellIds,
-      },
+    property: {
+      row_size: rowSize,
+      column_size: columnSize,
+      column_width: columnWidths,
+      ...(mergeInfo.length > 0 ? { merge_info: mergeInfo } : {}),
     },
-    cellDescendants,
+    cells,
   };
 }
