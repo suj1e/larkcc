@@ -5,20 +5,13 @@
 
 Claude Code in Feishu — 在任意项目目录启动，通过飞书机器人与 Claude 对话，体验等同于终端直接使用 Claude Code。
 
-## 安装
+## Install
 
 ```bash
 npm install -g larkcc
 ```
 
-从源码安装：
-
-```bash
-git clone https://github.com/suj1e/larkcc.git
-cd larkcc && chmod +x install.sh && ./install.sh
-```
-
-## 快速开始
+## Quick Start
 
 ```bash
 larkcc --setup          # 配置机器人（只需 App ID 和 Secret）
@@ -28,7 +21,7 @@ larkcc                  # 启动
 
 首次发消息自动检测并保存 open_id，之后即可正常使用。
 
-## 命令
+## CLI
 
 ```bash
 larkcc                  # 启动（默认机器人，新会话）
@@ -39,7 +32,7 @@ larkcc --setup          # 配置机器人
 larkcc --help           # 查看所有命令
 ```
 
-## 功能
+## Features
 
 - 流式输出 — 打字机效果逐字显示，支持 CardKit 和 update 两种模式
 - 超长消息 — 自动写入飞书云文档，回复文档链接
@@ -52,53 +45,9 @@ larkcc --help           # 查看所有命令
 - 响应元数据 — 每条回复显示耗时、模型、token 用量
 - 多机器人 — 多 profile 独立管理，同一台机器运行多个实例
 
-## Slash 命令
+## Slash Commands
 
-### 快速执行（不走 Claude，秒返回）
-
-| 命令 | 说明 |
-|------|------|
-| `/stop` `/cancel` | 中断当前任务 |
-| `/s` `/status` | git status + 最近提交 |
-| `/d` `/diff` | git diff |
-| `/l` `/log` | git log |
-| `/b` `/branch` | 分支列表 |
-| `/pwd` | 当前目录 + 文件列表 |
-| `/ps` | 运行中的进程 |
-
-### Claude 快捷方式
-
-| 命令 | 说明 |
-|------|------|
-| `/review` | 代码 review |
-| `/fix` | 修复报错 |
-| `/doc` | 生成/更新 README |
-| `/test [文件]` | 生成单元测试 |
-| `/explain [文件]` | 解释代码 |
-| `/refactor [文件]` | 重构 |
-| `/commit` | 生成 commit message |
-| `/pr` | 生成 PR 描述 |
-| `/todo` | 整理 TODO 清单 |
-| `/summary` | 生成工作日报 |
-| `/bsx [内容]` | 头脑风暴，不动代码 |
-| `/quality [路径]` | 代码质量检查 |
-| `/release [类型]` | 生成 CHANGELOG + 执行 release.sh |
-| `/check` | 综合检查（类型/lint/测试） |
-| `/security` | 安全漏洞扫描 |
-| `/deps` | 检查过期依赖 |
-| `/build` | 构建项目 |
-| `/install` | 安装依赖 |
-| `/run [script]` | 运行 npm script |
-| `/help` | 查看所有命令 |
-
-### 多文件模式
-
-| 命令 | 说明 |
-|------|------|
-| `/mf start` | 开始多文件模式 |
-| `/mf done` | 结束并发送所有缓存的文件 |
-
-### 自定义命令
+发送 `/help` 查看所有可用命令。支持自定义命令：
 
 ```yaml
 # ~/.larkcc/config.yml
@@ -114,7 +63,7 @@ exec_commands:
 
 占位符：`{input}` 用于 prompt 命令，`{{args}}` / `{{param|default}}` 用于 exec 命令。
 
-## 群聊
+## Group Chat
 
 把多个机器人拉进同一个飞书群，通过 @ 或引用回复分别控制：
 
@@ -124,60 +73,27 @@ exec_commands:
 
 额外权限：`im:message.group_at_msg:readonly`
 
-## 配置
+## Configuration
 
-`~/.larkcc/config.yml`：
+`~/.larkcc/config.yml`，`larkcc --setup` 自动生成：
 
 ```yaml
 feishu:
   app_id: cli_xxxxxxxx
   app_secret: xxxxxxxxxxxxxxxx
-  owner_open_id: ou_xxxxxxxx   # 首次收到消息后自动填入
 
+# Claude
 claude:
   permission_mode: acceptEdits
   allowed_tools: [Read, Write, Edit, Bash, Glob, Grep, LS]
 
-# 流式输出
+# 流式输出（默认 cardkit）
 streaming:
-  enabled: true
   mode: cardkit                # cardkit | update | none
-  flush_interval_ms: 300
-  thinking_enabled: false      # 显示思考过程
-  fallback_on_error: true
 
-# 超长消息
+# 超长消息 → 云文档
 overflow:
-  mode: document               # document（云文档）| chunk（分片）
-  document:
-    threshold: 2800
-    title_template: "{cwd} - {session_id} - {datetime}"
-    cleanup:
-      enabled: true
-      max_docs: 50
-      notify: true
-
-# 格式
-card_title: Claude              # 卡片标题，留空不显示
-format_guide:
-  enabled: true                 # 注入飞书格式要求到 prompt
-image_resolver:
-  enabled: true                 # 外部图片自动上传
-image_prompt: "分析图片，给出回应"
-
-# 文件处理
-file:
-  enabled: true
-  size_limit: 31457280          # 30MB
-  multifile_timeout: 300
-
-# 自定义命令
-commands: {}
-exec_commands: {}
-exec_security:
-  enabled: true
-  blacklist: ["rm -rf", "sudo", "mkfs"]
-  confirm_on_warning: true
+  mode: document               # document | chunk
 
 # 多机器人
 profiles:
@@ -187,9 +103,9 @@ profiles:
       app_secret: xxxxxxxxxxxxxxxx
 ```
 
-标题模板占位符：`{cwd}` `{session_id}` `{datetime}` `{date}` `{profile}`
+完整配置项见 `src/config.ts`。
 
-## 飞书权限
+## Permissions
 
 在 [飞书开发者后台](https://open.feishu.cn/) 开通以下权限，然后创建新版本并发布：
 
@@ -205,10 +121,6 @@ profiles:
 | `drive:file` | 删除云空间文件 | 文档清理 |
 
 事件订阅：使用**长连接** → 订阅 `im.message.receive_v1`
-
-## 相关资源
-
-- [飞书文档块 API](https://feishu.apifox.cn/doc-1950637) — 文档块类型、属性、代码语言枚举
 
 ## License
 
