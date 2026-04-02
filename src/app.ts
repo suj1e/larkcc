@@ -286,10 +286,11 @@ export async function startApp(
   let processing   = false;
   let processingStartedAt = 0;
   let currentAbortController: AbortController | null = null;
+  let processingTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  let isTimedOut = false;
   let knownChatId  = getChatId();
   const startupTime    = Date.now();
   const recentMessages = new Map<string, number>();
-  const PROCESSING_TIMEOUT_MS = 10 * 60 * 1000;
 
   if (continueSession) {
     const savedSession = getSession(true);
@@ -618,14 +619,6 @@ export async function startApp(
 
         logger.msg(senderId, `[${isGroup ? "group" : "p2p"}] ${text || "[image]"}`);
 
-        // 超时自动释放
-        if (processing && Date.now() - processingStartedAt > PROCESSING_TIMEOUT_MS) {
-          logger.warn("Processing timeout, force releasing lock...");
-          processing = false;
-          processingStartedAt = 0;
-          currentAbortController = null;
-        }
-
         if (processing) {
           const elapsed = Math.round((Date.now() - processingStartedAt) / 1000);
           logger.warn("Still processing previous message, skipping...");
@@ -635,7 +628,18 @@ export async function startApp(
 
         processing = true;
         processingStartedAt = Date.now();
+        isTimedOut = false;
         currentAbortController = new AbortController();
+
+        // 主动超时定时器
+        const timeoutMs = config.processing_timeout_ms ?? 30 * 60 * 1000;
+        processingTimeoutTimer = setTimeout(() => {
+          if (processing && currentAbortController) {
+            logger.warn(`Processing timeout (${timeoutMs / 1000}s), aborting...`);
+            isTimedOut = true;
+            currentAbortController.abort();
+          }
+        }, timeoutMs);
 
         let reactionId: string | undefined;
         try {
@@ -667,12 +671,19 @@ export async function startApp(
           }
 
           const result = await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
+          if (processingTimeoutTimer) clearTimeout(processingTimeoutTimer);
           if (reactionId) {
             await client.im.messageReaction.delete({
               path: { message_id: msg.message_id, reaction_id: reactionId },
             }).catch(() => {});
           }
-          if (result === "aborted") {
+          if (isTimedOut) {
+            await sendText(client, chatId, `⏰ 处理超时（${Math.round(timeoutMs / 60000)}分钟），已终止。以上为部分结果。`);
+            await client.im.messageReaction.create({
+              path: { message_id: msg.message_id },
+              data: { reaction_type: { emoji_type: config.reaction?.timeout ?? "Clock" } },
+            }).catch(() => {});
+          } else if (result === "aborted") {
             await sendText(client, chatId, "✅ 已中断");
             await client.im.messageReaction.create({
               path: { message_id: msg.message_id },
@@ -685,6 +696,7 @@ export async function startApp(
             }).catch(() => {});
           }
         } catch (err) {
+          if (processingTimeoutTimer) clearTimeout(processingTimeoutTimer);
           logger.error(`Agent error: ${String(err)}`);
           await sendText(client, chatId, `❌ 出错了：${String(err)}`);
           if (reactionId) {
@@ -700,6 +712,8 @@ export async function startApp(
           processing = false;
           processingStartedAt = 0;
           currentAbortController = null;
+          processingTimeoutTimer = null;
+          isTimedOut = false;
         }
       },
     }),

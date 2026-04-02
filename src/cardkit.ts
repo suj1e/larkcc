@@ -441,18 +441,9 @@ export class CardKitController {
         cardContent += `\n\n---\n${options.metadata}`;
       }
 
-      // 清理旧文档（如果启用）
+      // 清理旧文档
       const cleanupConfig = this.context.overflow.document.cleanup;
-      if (cleanupConfig?.enabled) {
-        const cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs, this.context.profile);
-        if (cleanupConfig.notify && (cleanupResult.deleted > 0 || cleanupResult.failed > 0)) {
-          if (cleanupResult.failed > 0) {
-            cardContent += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档，${cleanupResult.failed} 个删除失败`;
-          } else {
-            cardContent += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档（保留最近 ${cleanupConfig.max_docs} 个）`;
-          }
-        }
-      }
+      await cleanupOldDocuments(token, cleanupConfig.max_docs, this.context.profile);
 
       const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
       const finalCardJson = this.buildFinalCard(cardContent, extraElements);

@@ -10,9 +10,7 @@ export interface FeishuConfig {
 }
 
 export interface CleanupConfig {
-  enabled: boolean;    // 是否启用自动清理
-  max_docs: number;    // 最大保留文档数
-  notify: boolean;     // 清理时是否通知
+  max_docs: number;    // 注册表超过此数量时清理最旧的文档
 }
 
 export interface FileConfig {
@@ -49,6 +47,7 @@ export interface ReactionConfig {
   processing: string;  // 处理中的 emoji_type
   done: string;        // 完成的 emoji_type
   error: string;       // 出错的 emoji_type
+  timeout: string;     // 超时的 emoji_type
 }
 
 export interface FormatGuideConfig {
@@ -85,6 +84,7 @@ export interface ProfileConfig {
 
 export interface LarkccConfig extends ProfileConfig {
   reaction?: ReactionConfig;
+  processing_timeout_ms?: number;
   card_title?: string;
   card_table?: CardTableConfig;
   format_guide?: FormatGuideConfig;
@@ -105,6 +105,7 @@ export interface RawConfig {
   exec_commands?: Record<string, string>;  // 自定义 EXEC 命令
   exec_security?: ExecSecurity;  // EXEC 安全配置
   reaction?: ReactionConfig;     // reaction emoji 配置
+  processing_timeout_ms?: number; // 处理超时（毫秒）
   card_title?: string;           // 卡片标题
   card_table?: CardTableConfig;  // 卡片表格限制配置
   profiles?: Record<string, Partial<ProfileConfig>>;
@@ -122,9 +123,7 @@ const DEFAULT_OVERFLOW: OverflowConfig = {
     threshold: 2800,
     title_template: "{datetime}",
     cleanup: {
-      enabled: true,
       max_docs: 50,
-      notify: true,
     },
   },
 };
@@ -160,7 +159,10 @@ const DEFAULT_REACTION: ReactionConfig = {
   processing: "Typing",
   done: "DONE",
   error: "OnIt",
+  timeout: "Clock",
 };
+
+const DEFAULT_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;  // 30 分钟
 
 const DEFAULT_CARD_TABLE: CardTableConfig = {
   max_tables_per_card: 5,
@@ -246,9 +248,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
         threshold: overflow.document?.threshold ?? DEFAULT_OVERFLOW.document.threshold,
         title_template: overflow.document?.title_template ?? DEFAULT_OVERFLOW.document.title_template,
         cleanup: {
-          enabled: overflow.document?.cleanup?.enabled ?? DEFAULT_OVERFLOW.document.cleanup.enabled,
           max_docs: overflow.document?.cleanup?.max_docs ?? DEFAULT_OVERFLOW.document.cleanup.max_docs,
-          notify: overflow.document?.cleanup?.notify ?? DEFAULT_OVERFLOW.document.cleanup.notify,
         },
       },
     },
@@ -272,7 +272,9 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
       processing: raw.reaction?.processing ?? DEFAULT_REACTION.processing,
       done: raw.reaction?.done ?? DEFAULT_REACTION.done,
       error: raw.reaction?.error ?? DEFAULT_REACTION.error,
+      timeout: raw.reaction?.timeout ?? DEFAULT_REACTION.timeout,
     },
+    processing_timeout_ms: raw.processing_timeout_ms ?? DEFAULT_PROCESSING_TIMEOUT_MS,
     card_title: raw.card_title ?? DEFAULT_CARD_TITLE,
     card_table: {
       max_tables_per_card: raw.card_table?.max_tables_per_card ?? DEFAULT_CARD_TABLE.max_tables_per_card,

@@ -425,12 +425,9 @@ async function replyWithDocument(
   try {
     const { token, title, originalMessage, meta } = await prepareOverflowContext(client, rootMsgId, context);
 
-    // 清理旧文档（如果启用）
-    let cleanupResult: { deleted: number; failed: number } | null = null;
+    // 清理旧文档
     const cleanupConfig = context.overflow.document.cleanup;
-    if (cleanupConfig?.enabled) {
-      cleanupResult = await cleanupOldDocuments(token, cleanupConfig.max_docs, context.profile);
-    }
+    await cleanupOldDocuments(token, cleanupConfig.max_docs, context.profile);
 
     // 创建文档（在应用云空间）
     const { docUrl, docId, warnings: docWarnings } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
@@ -442,13 +439,6 @@ async function replyWithDocument(
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
     if (docWarnings.length > 0) {
       replyMsg += `\n⚠️ ${docWarnings.join("；")}`;
-    }
-    if (cleanupConfig?.notify && cleanupResult && (cleanupResult.deleted > 0 || cleanupResult.failed > 0)) {
-      if (cleanupResult.failed > 0) {
-        replyMsg += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档，${cleanupResult.failed} 个删除失败`;
-      } else {
-        replyMsg += `\n🗑️ 已清理 ${cleanupResult.deleted} 个旧文档（保留最近 ${cleanupConfig.max_docs} 个）`;
-      }
     }
 
     // 更新等待卡片为文档链接
@@ -1118,8 +1108,7 @@ export async function cleanupOldDocuments(
 
     for (const doc of toDelete) {
       try {
-        // 使用 drive API 删除文档（docx 文档也是 drive 中的一种文件）
-        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${doc.id}?type=file`, {
+        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${doc.id}?type=docx`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${token}`,
@@ -1127,24 +1116,21 @@ export async function cleanupOldDocuments(
         });
         const deleteData = await safeJsonParse(deleteRes, "Delete document") as { code?: number };
 
-        if (deleteData.code === 0) {
+        // 确认删除成功(code=0) 或文档已不存在(1061003/1061007)时才移除记录
+        if (deleteData.code === 0 || deleteData.code === 1061003 || deleteData.code === 1061007) {
           result.deleted++;
-          // 从注册表中移除
           removeDocumentRecord(doc.id, profile);
         } else {
           result.failed++;
-          console.error(`Failed to delete document ${doc.id}:`, deleteData);
-          // 即使删除失败也尝试从注册表移除（可能是文档已被手动删除）
-          removeDocumentRecord(doc.id, profile);
+          console.error(`[CLEANUP] Failed to delete ${doc.id}:`, JSON.stringify(deleteData));
         }
-      } catch {
+      } catch (error) {
         result.failed++;
-        // 从注册表移除无效记录
-        removeDocumentRecord(doc.id, profile);
+        console.error(`[CLEANUP] Network error deleting ${doc.id}:`, error);
       }
     }
   } catch (error) {
-    console.error("Cleanup error:", error);
+    console.error("[CLEANUP] Error:", error);
   }
 
   return result;
