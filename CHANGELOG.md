@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-04-02
+
+### Fixed
+
+- Fix document cleanup API type parameter: `type=file` → `type=docx` (documents were not being deleted)
+- Fix cleanup registry drift: only remove record on confirmed deletion or confirmed non-existence (error codes 1061003/1061007), keep record on transient failures for retry
+
+### Changed
+
+- Simplify `CleanupConfig`: remove `enabled` and `notify` fields, cleanup always runs with single `max_docs` threshold
+- Remove cleanup notification from user-facing messages (now log-only)
+- Replace passive timeout check (10min, triggered by next message) with active timer that properly aborts the agent
+- Add configurable `processing_timeout_ms` (default: 30 minutes, top-level config field)
+- Add timeout reaction (`Clock` emoji) to distinguish timeout from user-initiated abort and errors
+
 ## [0.7.3] - 2026-03-29
 
 ### Fixed
