@@ -670,7 +670,7 @@ export async function startApp(
             }
           }
 
-          const result = await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController?.signal, profile);
+          const result = await runAgent(finalPrompt, cwd, config, client, chatId, msg.message_id, images.length > 0 ? images : undefined, currentAbortController ?? undefined, profile);
           if (processingTimeoutTimer) clearTimeout(processingTimeoutTimer);
           if (reactionId) {
             await client.im.messageReaction.delete({

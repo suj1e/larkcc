@@ -104,7 +104,7 @@ export async function runAgent(
   chatId: string,
   rootMsgId: string,
   images?: ImageInput[],
-  abortSignal?: AbortSignal,   // 可选中断信号
+  abortController?: AbortController,   // 中断控制器
   profile?: string              // 机器人配置名
 ): Promise<RunAgentResult> {
   const sessionId = getSession();
@@ -197,12 +197,12 @@ export async function runAgent(
         resume: sessionId,
         permissionMode: config.claude.permission_mode as "acceptEdits",
         allowedTools: config.claude.allowed_tools,
-        abortSignal,
+        abortController,
         ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
-    } as any)) {
+    })) {
     // 检查是否已中断（循环内快速路径）
-    if (abortSignal?.aborted) break;
+    if (abortController?.signal.aborted) break;
 
     if (event.type === "assistant") {
       const blocks = event.message.content as Array<{
@@ -360,12 +360,12 @@ export async function runAgent(
     }
 
     // 循环外统一处理 abort（覆盖 SDK 抛异常或正常退出的情况）
-    if (abortSignal?.aborted) {
+    if (abortController?.signal.aborted) {
       await handleAbort("Agent aborted by user");
       return "aborted";
     }
   } catch (err) {
-    if (abortSignal?.aborted) {
+    if (abortController?.signal.aborted) {
       await handleAbort("Agent aborted (SDK threw)");
       return "aborted";
     } else {
