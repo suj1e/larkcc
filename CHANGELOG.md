@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-12
+
+### Added
+
+- Multi-agent task panel: real-time Feishu cards for sub-agents spawned by Claude, showing status (running/completed/failed/stopped), progress summary, tool name, elapsed time, and token usage
+- `TaskPanelController` class for managing per-agent card lifecycle (`task_started`, `task_progress`, `task_notification` events)
+- Main card status bar integration: shows live summary like `🤖 2 agents: Fix auth (Bash), Update tests (Glob)`
+- `MultiAgentConfig` with `enabled` and `max_concurrent_agents` settings in `config.yml`
+- System prompt guidance (Section 5) instructing Claude when and how to use multi-agent parallel tasks
+- `abortAll()` / `completeAll()` for graceful cleanup on user abort or main agent finish
+
+### Changed
+
+- Default processing timeout increased from 30 minutes to 1 hour (multi-agent tasks take longer)
+
+### Fixed
+
+- Fix `abortController` typing after dependency upgrade
+
 ## [0.7.4] - 2026-04-02
 
 ### Fixed
