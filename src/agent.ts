@@ -19,6 +19,7 @@ import { resolveImages } from "./format/image-resolver.js";
 import { createStreamingCard } from "./streaming.js";
 import type { CompleteOptions } from "./streaming.js";
 import { CardKitController } from "./cardkit.js";
+import { TaskPanelController } from "./task-panel.js";
 
 const TOOL_LABELS: Record<string, string> = {
   Read:            "📂 读取文件",
@@ -136,6 +137,16 @@ export async function runAgent(
     });
   }
 
+  // 创建多 agent 任务面板控制器
+  const taskPanelCtrl = config.multi_agent?.enabled !== false
+    ? new TaskPanelController({
+        client,
+        chatId,
+        rootMsgId,
+        cardTitle: config.card_title ?? "Claude",
+      })
+    : null;
+
   // 构建格式指导 system prompt（追加到 Claude Code 默认 system prompt 后面）
   const systemPrompt = config.format_guide?.enabled !== false
     ? getFormatGuideContent()
@@ -174,6 +185,7 @@ export async function runAgent(
   // abort 处理（统一入口，保留已有内容）
   const handleAbort = async (logMsg: string) => {
     logger.info(logMsg);
+    await taskPanelCtrl?.abortAll();
     const reasoningElapsedMs = reasoningStartTime ? Date.now() - reasoningStartTime : undefined;
     const abortOptions = {
       content: textBuffer || undefined,
@@ -198,6 +210,7 @@ export async function runAgent(
         permissionMode: config.claude.permission_mode as "acceptEdits",
         allowedTools: config.claude.allowed_tools,
         abortController,
+        agentProgressSummaries: true,
         ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
     })) {
@@ -280,12 +293,38 @@ export async function runAgent(
       }
     }
 
+    // 多 agent 任务面板事件
+    if (event.type === "system" && event.subtype === "task_started") {
+      await taskPanelCtrl?.onTaskStarted(event as any);
+      const statusSummary = taskPanelCtrl?.getStatusSummary();
+      if (statusSummary && isCardkitMode) await cardkitCtrl?.updateStatus(statusSummary);
+    }
+
+    if (event.type === "system" && event.subtype === "task_progress") {
+      await taskPanelCtrl?.onTaskProgress(event as any);
+      const statusSummary = taskPanelCtrl?.getStatusSummary();
+      if (statusSummary && isCardkitMode) await cardkitCtrl?.updateStatus(statusSummary);
+    }
+
+    if (event.type === "system" && event.subtype === "task_notification") {
+      await taskPanelCtrl?.onTaskNotification(event as any);
+      const statusSummary = taskPanelCtrl?.getStatusSummary();
+      if (statusSummary && isCardkitMode) {
+        await cardkitCtrl?.updateStatus(statusSummary);
+      } else if (!statusSummary && isCardkitMode) {
+        await cardkitCtrl?.clearStatus();
+      }
+    }
+
     if (event.type === "result") {
       const resultEvent = event as SDKResultEvent;
       if (resultEvent.session_id) {
         setSession(resultEvent.session_id);
         logger.dim(`session saved: ${resultEvent.session_id}`);
       }
+
+      // 完成所有未结束的任务面板
+      await taskPanelCtrl?.completeAll();
 
       if (textBuffer) {
         // 计算耗时

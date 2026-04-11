@@ -668,6 +668,98 @@ export async function downloadFile(
   }
 }
 
+// ── 任务面板卡片 ─────────────────────────────────────────────
+
+export type TaskPanelStatus = "running" | "completed" | "failed" | "stopped";
+
+export interface TaskPanelCardOptions {
+  description: string;
+  status: TaskPanelStatus;
+  summary?: string;
+  lastToolName?: string;
+  elapsedSeconds?: number;
+  tokens?: number;
+  cardTitle?: string;
+}
+
+const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; label: string }> = {
+  running:  { color: "turquoise", icon: "🔄", label: "Running" },
+  completed: { color: "green",    icon: "✅", label: "Completed" },
+  failed:   { color: "red",      icon: "❌", label: "Failed" },
+  stopped:  { color: "grey",     icon: "⏹",  label: "Stopped" },
+};
+
+export function buildTaskPanelCard(options: TaskPanelCardOptions) {
+  const { description, status, summary, lastToolName, elapsedSeconds, tokens, cardTitle } = options;
+  const st = STATUS_TEMPLATE[status];
+
+  const elements: any[] = [];
+
+  // 状态栏：column_set 布局
+  const statusParts: string[] = [];
+  statusParts.push(`**${st.icon} ${st.label}**`);
+  if (lastToolName) statusParts.push(`Tool: \`${lastToolName}\``);
+  if (elapsedSeconds != null) {
+    const dur = elapsedSeconds < 60
+      ? `${elapsedSeconds.toFixed(0)}s`
+      : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
+    statusParts.push(`⏱ ${dur}`);
+  }
+  if (tokens != null) statusParts.push(`${tokens.toLocaleString()} tokens`);
+
+  elements.push({
+    tag: "markdown",
+    content: statusParts.join(" · "),
+  });
+
+  // 分割线
+  elements.push({ tag: "hr" });
+
+  // 内容区域
+  if (summary) {
+    elements.push({ tag: "markdown", content: summary.length > 3000 ? summary.slice(0, 3000) + "..." : summary });
+  } else if (status === "running") {
+    elements.push({ tag: "markdown", content: "Processing..." });
+  }
+
+  return {
+    schema: "2.0",
+    config: { wide_screen_mode: true },
+    header: {
+      title: { tag: "plain_text", content: cardTitle ? `${cardTitle} · ${description}` : description },
+      template: st.color,
+    },
+    body: { elements },
+  };
+}
+
+export async function sendTaskCard(
+  client: lark.Client,
+  chatId: string,
+  rootMsgId: string,
+  description: string,
+  cardTitle?: string,
+): Promise<string> {
+  const card = buildTaskPanelCard({ description, status: "running", cardTitle });
+  const res = await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
+    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+  });
+  return res.data?.message_id ?? "";
+}
+
+export async function updateTaskCard(
+  client: lark.Client,
+  msgId: string,
+  options: TaskPanelCardOptions,
+): Promise<void> {
+  const card = buildTaskPanelCard(options);
+  await client.im.message.patch({
+    path: { message_id: msgId },
+    data: { content: JSON.stringify(card) },
+  });
+}
+
 // ── 卡片构建 ─────────────────────────────────────────────────
 
 export interface CardBuildOptions {

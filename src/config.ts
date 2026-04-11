@@ -66,6 +66,11 @@ export interface ImageResolverConfig {
   enabled: boolean;            // 是否启用图片解析（下载外部图片上传到飞书）
 }
 
+export interface MultiAgentConfig {
+  enabled: boolean;            // 是否启用多 agent 任务面板
+  max_concurrent_agents: number; // 最大并发 agent 数
+}
+
 export interface ProfileConfig {
   feishu: FeishuConfig;
   claude: {
@@ -90,6 +95,7 @@ export interface LarkccConfig extends ProfileConfig {
   format_guide?: FormatGuideConfig;
   streaming?: StreamingConfig;
   image_resolver?: ImageResolverConfig;
+  multi_agent?: MultiAgentConfig;
 }
 
 export interface RawConfig {
@@ -99,6 +105,7 @@ export interface RawConfig {
   format_guide?: FormatGuideConfig;  // 格式指导配置
   streaming?: StreamingConfig;   // 流式输出配置
   image_resolver?: ImageResolverConfig;  // 图片解析配置
+  multi_agent?: MultiAgentConfig;       // 多 agent 配置
   image_prompt?: string;         // 图片消息的默认提示词
   file?: Partial<FileConfig>;    // 文件处理配置
   commands?: Record<string, string>;  // 自定义 PROMPT 命令
@@ -162,7 +169,7 @@ const DEFAULT_REACTION: ReactionConfig = {
   timeout: "Clock",
 };
 
-const DEFAULT_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;  // 30 分钟
+const DEFAULT_PROCESSING_TIMEOUT_MS = 60 * 60 * 1000;  // 1 小时
 
 const DEFAULT_CARD_TABLE: CardTableConfig = {
   max_tables_per_card: 5,
@@ -182,6 +189,11 @@ const DEFAULT_STREAMING: StreamingConfig = {
 
 const DEFAULT_IMAGE_RESOLVER: ImageResolverConfig = {
   enabled: true,
+};
+
+const DEFAULT_MULTI_AGENT: MultiAgentConfig = {
+  enabled: true,
+  max_concurrent_agents: 5,
 };
 
 const DEFAULT_CARD_TITLE = "Claude";
@@ -291,6 +303,10 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     },
     image_resolver: {
       enabled: raw.image_resolver?.enabled ?? DEFAULT_IMAGE_RESOLVER.enabled,
+    },
+    multi_agent: {
+      enabled: raw.multi_agent?.enabled ?? DEFAULT_MULTI_AGENT.enabled,
+      max_concurrent_agents: raw.multi_agent?.max_concurrent_agents ?? DEFAULT_MULTI_AGENT.max_concurrent_agents,
     },
   };
 }
