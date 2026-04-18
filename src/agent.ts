@@ -146,6 +146,7 @@ export async function runAgent(
         chatId,
         rootMsgId,
         cardTitle: config.card_title ?? "Claude",
+        headerIconImgKey: config.header_icon_img_key,
       })
     : null;
 
@@ -396,6 +397,7 @@ export async function runAgent(
             duration: elapsedSeconds,
             toolCount: toolCallCount,
           },
+          headerIconImgKey: config.header_icon_img_key,
         };
 
         if (cardkitCtrl) {

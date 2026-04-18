@@ -70,3 +70,92 @@ deps: |
   检查过期依赖，根据项目类型自动选择工具。
 
   {input}
+
+updeps: |
+  依赖升级适配工具。分阶段执行，每个阶段等待用户确认。
+
+  {input} 可指定包名关键词过滤，如 `/updeps claude`，无输入则列出全部。
+
+  ## Phase 1：概览
+
+  1. 运行 `gh issue list --label deps-update --state open --json number,title,body`
+     如果没有 Issue，提示"当前没有待处理的依赖更新"并结束。
+  2. 如果有 {input}，按关键词过滤 Issue 标题。
+  3. 输出概览表格：
+
+     | # | 依赖 | 当前 → 最新 | 类型 | 摘要 |
+     |---|------|-------------|------|------|
+     | 4 | claude-agent-sdk | 0.2.92 → 0.2.114 | patch | ... |
+
+     摘要从 Issue body 的 Release Notes 部分提取，一句话概括最关键的变更。
+
+  4. 提示用户：选择要适配的 Issue 编号（多选用逗号），或输入 skip 跳过。
+  **不要执行任何代码修改或依赖更新，等待用户回复。**
+
+  ## Phase 2：详细方案
+
+  用户选择后，对每个选中的依赖：
+
+  1. 读取 Issue body 中的 Release Notes
+  2. 在项目中搜索该依赖的 import/使用位置（grep 源码）
+  3. 对比当前版本和新版本的类型定义（如有 .d.ts）
+  4. 输出详细报告：
+
+     #### 📦 {package} {old} → {new}
+
+     **变更概要**
+     - Breaking changes: ...
+     - 新增特性（与本项目相关）: ...
+     - 废弃 API: ...
+
+     **受影响代码**
+     - `src/xxx.ts:行号` — 用途说明
+     - ...
+
+     **适配方案**
+     1. 具体步骤（如：将手写类型替换为 SDK 导出类型）
+     2. ...
+     3. ...
+
+     **预期改动范围**: {影响文件数} 个文件
+
+  5. 提示用户：确认方案？可修改方案或跳过。
+  **不要执行任何代码修改，等待用户回复。**
+
+  ## Phase 3：执行
+
+  用户确认后：
+
+  1. `pnpm add {pkg}@{version}` 更新依赖
+  2. 按适配方案修改代码
+  3. `pnpm build` 验证编译通过
+  4. 如果 build 失败：报告错误，修复后重试，最多 3 次
+  5. 汇报执行结果（改了哪些文件、build 状态）
+  6. 提示用户：确认 commit + push + 关闭 Issue？
+  **等待用户回复。**
+
+  用户确认 commit 后：
+  - git add + commit（message: `deps: update {pkg} {old} → {new}`）
+  - git push
+  - `gh issue close #{n} --comment "已适配并发布"` 关闭 Issue
+
+issues: |
+  GitHub Issue 查看工具。拉取手动创建的 Issue 并生成报告，不包含自动依赖更新 Issue。
+
+  {input} 可指定关键词过滤标题，如 `/issues bug`，无输入则列出全部。
+
+  ## 执行步骤
+
+  1. 运行 `gh issue list --state open --json number,title,labels,body,created_at`
+  2. 排除带 `deps-update` 标签的 Issue
+  3. 如果有 {input}，按关键词过滤 Issue 标题
+  4. 如果没有匹配的 Issue，提示"当前没有待处理的 Issue"并结束
+  5. 输出报告：
+
+     | # | 标题 | 标签 | 创建时间 | 概要 |
+     |---|------|------|----------|------|
+     | 7 | 修复卡片渲染问题 | bug | 2026-04-18 | ... |
+
+     概要从 Issue body 前几行提取，一句话概括。
+
+  6. 结束，不做任何代码修改。

@@ -476,16 +476,13 @@ export class CardKitController {
       registerDocument(docId, this.context.profile);
 
       let cardContent = `📝 内容较长，已写入云文档：[${title}](${docUrl})`;
-      if (options?.metadata) {
-        cardContent += `\n\n---\n${options.metadata}`;
-      }
 
       // 清理旧文档
       const cleanupConfig = this.context.overflow.document.cleanup;
       await cleanupOldDocuments(token, cleanupConfig.max_docs, this.context.profile);
 
       const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
-      const finalCardJson = this.buildFinalCard(cardContent, extraElements);
+      const finalCardJson = this.buildFinalCard(cardContent, extraElements, options?.stats);
 
       await this.closeAndFinalize(finalCardJson);
     } catch (error) {

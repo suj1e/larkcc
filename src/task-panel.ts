@@ -25,6 +25,7 @@ export interface TaskPanelControllerOptions {
   chatId: string;
   rootMsgId: string;
   cardTitle?: string;
+  headerIconImgKey?: string;
 }
 
 export class TaskPanelController {
@@ -32,6 +33,7 @@ export class TaskPanelController {
   private chatId: string;
   private rootMsgId: string;
   private cardTitle?: string;
+  private headerIconImgKey?: string;
   private tasks = new Map<string, TaskState>();
 
   constructor(options: TaskPanelControllerOptions) {
@@ -39,6 +41,7 @@ export class TaskPanelController {
     this.chatId = options.chatId;
     this.rootMsgId = options.rootMsgId;
     this.cardTitle = options.cardTitle;
+    this.headerIconImgKey = options.headerIconImgKey;
   }
 
   /** 子 agent 启动：创建任务面板卡片 */
@@ -55,6 +58,7 @@ export class TaskPanelController {
         this.rootMsgId,
         event.description.slice(0, 80),
         this.cardTitle,
+        this.headerIconImgKey,
       );
       this.tasks.set(event.task_id, {
         msgId,
@@ -95,6 +99,7 @@ export class TaskPanelController {
         elapsedSeconds: (Date.now() - task.startTime) / 1000,
         tokens: task.tokens,
         cardTitle: this.cardTitle,
+        headerIconImgKey: this.headerIconImgKey,
       });
     } catch (err) {
       console.error("[task-panel] failed to update progress:", err);
@@ -127,6 +132,7 @@ export class TaskPanelController {
         elapsedSeconds,
         tokens: task.tokens,
         cardTitle: this.cardTitle,
+        headerIconImgKey: this.headerIconImgKey,
       });
       logger.dim(`[task-panel] ${event.status}: ${task.description.slice(0, 40)}`);
     } catch (err) {

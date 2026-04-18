@@ -175,6 +175,8 @@ export interface CompleteOptions {
     duration?: number;
     toolCount?: number;
   };
+  /** Header 自定义图标 */
+  headerIconImgKey?: string;
 }
 
 export interface IStreamingCard {

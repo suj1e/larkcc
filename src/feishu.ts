@@ -5,6 +5,8 @@ import * as os from "os";
 import { OverflowConfig, CardTableConfig } from "./config.js";
 import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType, parseInlineText } from "./format/index.js";
 import { buildThinkingPanel } from "./format/duration.js";
+import { buildHeader, buildFooterMarkdown } from "./format/card.js";
+import { formatDuration } from "./format/duration.js";
 import type { Block, DocumentBlockItem, CalloutCreateData, TableCreateData } from "./format/index.js";
 
 // ── 文档注册表（本地追踪创建的文档，每个 profile 独立文件）─────────────────────────────
@@ -236,6 +238,16 @@ export interface ReplyFinalOptions {
   thinking?: string;
   /** 卡片标题 */
   cardTitle?: string;
+  /** 结构化统计数据 */
+  stats?: {
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    duration?: number;
+    toolCount?: number;
+  };
+  /** Header 自定义图标 */
+  headerIconImgKey?: string;
 }
 
 export async function replyFinalCard(
@@ -257,7 +269,7 @@ export async function replyFinalCard(
   if (tableCount > maxTablesPerCard) {
     if (context?.overflow.mode === "document" && markdown.length > threshold) {
       // 表格多 + 内容长 → 文档（文档比分片更适合承载大量表格+长文本）
-      await replyWithDocument(client, chatId, rootMsgId, markdown, context);
+      await replyWithDocument(client, chatId, rootMsgId, markdown, context, options);
     } else {
       // 表格多 + 内容短 → 按表格拆分为多个卡片
       const chunks = splitMarkdownByTables(markdown, maxTablesPerCard);
@@ -280,7 +292,7 @@ export async function replyFinalCard(
   // 超限处理
   if (context?.overflow.mode === "document") {
     // 文档模式：不追加 metadata 和 thinking
-    await replyWithDocument(client, chatId, rootMsgId, markdown, context);
+    await replyWithDocument(client, chatId, rootMsgId, markdown, context, options);
   } else {
     const chunks = splitMarkdown(markdown, context?.overflow.chunk.threshold ?? CHUNK_SIZE);
     for (let i = 0; i < chunks.length; i++) {
@@ -407,8 +419,12 @@ async function replyWithDocument(
   chatId: string,
   rootMsgId: string,
   markdown: string,
-  context: ReplyContext
+  context: ReplyContext,
+  options?: ReplyFinalOptions,
 ): Promise<void> {
+  const stats = options?.stats;
+  const cardTitle = options?.cardTitle ?? "Claude";
+
   // 先发等待卡片
   let waitingMsgId: string | undefined;
   try {
@@ -435,14 +451,54 @@ async function replyWithDocument(
     // 注册新文档到本地记录
     registerDocument(docId, context.profile);
 
-    // 构建回复消息
+    // 构建文档卡片（带 header + footer）
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
     if (docWarnings.length > 0) {
       replyMsg += `\n⚠️ ${docWarnings.join("；")}`;
     }
 
-    // 更新等待卡片为文档链接
-    await patchOrCreateCard(client, waitingMsgId, rootMsgId, replyMsg);
+    const elements: any[] = [{ tag: "markdown", content: replyMsg }];
+    const footer = buildFooterMarkdown({
+      inputTokens: stats?.inputTokens,
+      outputTokens: stats?.outputTokens,
+      toolCount: stats?.toolCount,
+    });
+    if (footer) {
+      elements.push({ tag: "hr" }, { tag: "markdown", content: footer, text_size: "notation" });
+    }
+
+    const tags: Array<{ text: string; color: string }> = [];
+    if (stats?.model) tags.push({ text: stats.model, color: "blue" });
+    const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
+    if (totalTokens > 0) tags.push({ text: `${totalTokens.toLocaleString()} tokens`, color: "turquoise" });
+    if (stats?.duration != null) tags.push({ text: formatDuration(stats.duration), color: "orange" });
+
+    const docCard: any = {
+      schema: "2.0",
+      config: { wide_screen_mode: true },
+      header: buildHeader({
+        title: cardTitle,
+        subtitle: "内容已写入云文档",
+        template: "green",
+        iconImgKey: options?.headerIconImgKey,
+        tags,
+      }),
+      body: { elements },
+    };
+
+    // patch 等待卡片或发新消息
+    if (waitingMsgId) {
+      try {
+        await (client.im.message as any).patch({
+          path: { message_id: waitingMsgId },
+          data: { content: JSON.stringify(docCard) },
+        });
+        return;
+      } catch {
+        // patch 失败，fallback 到发新消息
+      }
+    }
+    await sendMessageChunk(client, rootMsgId, replyMsg);
   } catch (error) {
     // 写文档失败，回退到分片发送
     console.error("Failed to create document:", error);
@@ -724,6 +780,7 @@ export interface TaskPanelCardOptions {
   elapsedSeconds?: number;
   tokens?: number;
   cardTitle?: string;
+  headerIconImgKey?: string;
 }
 
 const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; label: string }> = {
@@ -734,22 +791,15 @@ const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; la
 };
 
 export function buildTaskPanelCard(options: TaskPanelCardOptions) {
-  const { description, status, summary, lastToolName, elapsedSeconds, tokens, cardTitle } = options;
+  const { description, status, summary, lastToolName, elapsedSeconds, tokens, cardTitle, headerIconImgKey } = options;
   const st = STATUS_TEMPLATE[status];
 
   const elements: any[] = [];
 
-  // 状态栏：column_set 布局
+  // 状态行：icon + label + last tool
   const statusParts: string[] = [];
   statusParts.push(`**${st.icon} ${st.label}**`);
   if (lastToolName) statusParts.push(`Tool: \`${lastToolName}\``);
-  if (elapsedSeconds != null) {
-    const dur = elapsedSeconds < 60
-      ? `${elapsedSeconds.toFixed(0)}s`
-      : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
-    statusParts.push(`⏱ ${dur}`);
-  }
-  if (tokens != null) statusParts.push(`${tokens.toLocaleString()} tokens`);
 
   elements.push({
     tag: "markdown",
@@ -766,13 +816,58 @@ export function buildTaskPanelCard(options: TaskPanelCardOptions) {
     elements.push({ tag: "markdown", content: "Processing..." });
   }
 
+  // 终态 footer
+  if ((status === "completed" || status === "failed" || status === "stopped") && (tokens != null || elapsedSeconds != null)) {
+    const footerParts: string[] = [];
+    if (tokens != null) footerParts.push(`📥 ${tokens.toLocaleString()}`);
+    if (elapsedSeconds != null) {
+      const dur = elapsedSeconds < 60
+        ? `${elapsedSeconds.toFixed(0)}s`
+        : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
+      footerParts.push(`⏱ ${dur}`);
+    }
+    elements.push(
+      { tag: "hr" },
+      { tag: "markdown", content: `<font color='grey'>${footerParts.join(" · ")}</font>`, text_size: "notation" },
+    );
+  }
+
+  // Header tags: elapsed time + tokens
+  const tags: Array<{ text: string; color: string }> = [];
+  if (elapsedSeconds != null) {
+    const dur = elapsedSeconds < 60
+      ? `${elapsedSeconds.toFixed(0)}s`
+      : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
+    tags.push({ text: dur, color: "orange" });
+  }
+  if (tokens != null) {
+    tags.push({ text: `${tokens.toLocaleString()} tokens`, color: "turquoise" });
+  }
+
+  // Header icon
+  const icon = headerIconImgKey
+    ? { tag: "custom_icon", img_key: headerIconImgKey }
+    : { tag: "standard_icon", token: "larkcommunity_colorful" };
+
+  const header: any = {
+    title: { tag: "plain_text", content: cardTitle ?? "Sub Agent" },
+    subtitle: { tag: "plain_text", content: description },
+    template: st.color,
+    icon,
+  };
+
+  if (tags.length > 0) {
+    header.text_tag_list = tags.slice(0, 3).map(t => ({
+      tag: "text_tag",
+      text: { tag: "plain_text", content: t.text },
+      color: t.color,
+    }));
+  }
+
   return {
     schema: "2.0",
     config: { wide_screen_mode: true },
-    header: {
-      title: { tag: "plain_text", content: cardTitle ? `${cardTitle} · ${description}` : description },
-      template: st.color,
-    },
+    header,
     body: { elements },
   };
 }
@@ -783,8 +878,9 @@ export async function sendTaskCard(
   rootMsgId: string,
   description: string,
   cardTitle?: string,
+  headerIconImgKey?: string,
 ): Promise<string> {
-  const card = buildTaskPanelCard({ description, status: "running", cardTitle });
+  const card = buildTaskPanelCard({ description, status: "running", cardTitle, headerIconImgKey });
   const res = await (client.im.message as any).reply({
     path: { message_id: rootMsgId },
     data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
