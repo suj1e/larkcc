@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-04-18
+
+### Fixed
+
+- Windows ESM import error (`ERR_UNSUPPORTED_ESM_URL_SCHEME`): use `pathToFileURL` to convert paths to `file://` URLs (#2)
+
 ## [0.10.0] - 2026-04-18
 
 ### Added
