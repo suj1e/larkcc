@@ -19,7 +19,7 @@
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
-import { optimizeForCard } from "./format/card-optimize.js";
+import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
 import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
@@ -392,7 +392,7 @@ export class CardKitController {
 
     // 先截断再优化，避免对超长内容做无用正则处理
     const preTruncated = displayContent.length > TRUNCATE_LIMIT
-      ? displayContent.slice(0, TRUNCATE_LIMIT) + "\n\n..."
+      ? truncateSafely(displayContent, TRUNCATE_LIMIT)
       : displayContent;
     const optimized = optimizeForCard(preTruncated);
 
@@ -453,7 +453,7 @@ export class CardKitController {
       console.error("[CARDKIT] Overflow document failed, truncating:", error);
       const optimized = optimizeForCard(rawContent);
       const truncated = optimized.length > TRUNCATE_LIMIT
-        ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..."
+        ? truncateSafely(optimized, TRUNCATE_LIMIT)
         : optimized;
       const finalCardJson = this.buildFinalCard(truncated);
       await this.closeAndFinalize(finalCardJson);

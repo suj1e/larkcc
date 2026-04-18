@@ -9,7 +9,7 @@
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
-import { optimizeForCard } from "./format/card-optimize.js";
+import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import type { StreamingConfig } from "./config.js";
 import type { ReplyContext } from "./feishu.js";
@@ -289,7 +289,7 @@ class UpdateStreamingCard implements IStreamingCard {
     if (!displayContent.trim()) return;
 
     const optimized = optimizeForCard(displayContent);
-    const truncated = optimized.length > TRUNCATE_LIMIT ? optimized.slice(0, TRUNCATE_LIMIT) + "\n\n..." : optimized;
+    const truncated = optimized.length > TRUNCATE_LIMIT ? truncateSafely(optimized, TRUNCATE_LIMIT) : optimized;
 
     const card = buildMarkdownCard(truncated, [], { ...cardOptions, cardTitle: this.cardTitle });
     await this.client.im.message.patch({

@@ -5,6 +5,8 @@
  * 对齐 openclaw-lark 的 collapsible_panel 方案。
  */
 
+import { truncateSafely } from "./card-optimize.js";
+
 // ── 常量 ──────────────────────────────────────────────────
 
 /** Thinking 内容截断阈值（字符数） */
@@ -40,7 +42,7 @@ interface ThinkingPanelOptions {
  */
 export function buildThinkingPanel(options: ThinkingPanelOptions): any[] {
   const truncatedThinking = options.thinking.length > THINKING_OVERFLOW_TRUNCATE
-    ? options.thinking.slice(0, THINKING_OVERFLOW_TRUNCATE) + "\n..."
+    ? truncateSafely(options.thinking, THINKING_OVERFLOW_TRUNCATE, "\n...")
     : options.thinking;
 
   const durLabel = options.reasoningElapsedMs

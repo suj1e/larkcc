@@ -506,10 +506,53 @@ export async function updateToolCard(
   msgId: string,
   label: string,
   detail: string,
-  _resultPreview: string
+  resultPreview: string
 ): Promise<void> {
-  const content = `${label}\n\`${detail}\`\n✅ 完成`;
-  const card = buildMarkdownCard(content);
+  const elements: any[] = [
+    {
+      tag: "markdown",
+      content: `${label}\n\`${detail}\``,
+    },
+  ];
+
+  // 结果预览放入可折叠面板
+  if (resultPreview.trim()) {
+    elements.push({
+      tag: "collapsible_panel",
+      expanded: false,
+      header: {
+        title: {
+          tag: "plain_text",
+          content: `📋 查看结果`,
+        },
+        vertical_align: "center",
+        icon: {
+          tag: "standard_icon",
+          token: "down-small-ccm_outlined",
+          size: "16px 16px",
+        },
+        icon_position: "right",
+        icon_expanded_angle: -180,
+      },
+      border: { color: "grey", corner_radius: "5px" },
+      vertical_spacing: "8px",
+      padding: "8px 8px 8px 8px",
+      elements: [
+        {
+          tag: "markdown",
+          content: resultPreview,
+          text_size: "notation",
+        },
+      ],
+    });
+  }
+
+  const card: any = {
+    schema: "2.0",
+    config: { wide_screen_mode: true },
+    body: { elements },
+  };
+
   await client.im.message.patch({
     path: { message_id: msgId },
     data: { content: JSON.stringify(card) },

@@ -67,6 +67,58 @@ export function demoteHeadings(text: string): string {
   return text;
 }
 
+// ── 安全截断 ───────────────────────────────────────────────────
+
+/**
+ * 安全截断 Markdown 内容
+ *
+ * 避免在代码块或表格中间截断：
+ * 1. 检测未闭合的代码块（奇数个 ```）→ 回退到代码块开始前
+ * 2. 检测未闭合的表格 → 回退到表格开始前
+ * 3. 极端情况（代码块占大部分）→ 闭合代码块后再截断
+ */
+export function truncateSafely(text: string, limit: number, suffix = "\n\n..."): string {
+  if (text.length <= limit) return text;
+
+  let truncated = text.slice(0, limit);
+
+  // 检测未闭合的代码块
+  const codeBlockCount = (truncated.match(/```/g) || []).length;
+  if (codeBlockCount % 2 !== 0) {
+    // 找到最后一个 ``` 的位置
+    const lastCodeStart = truncated.lastIndexOf("```");
+    if (lastCodeStart > limit * 0.5) {
+      // 代码块占后半部分，回退到代码块前
+      truncated = text.slice(0, lastCodeStart).trimEnd();
+    } else {
+      // 代码块占大部分，闭合它
+      truncated = truncated + "\n```";
+    }
+  }
+
+  // 检测未闭合的表格
+  const lines = truncated.split("\n");
+  const lastLines = lines.slice(-5);
+  const inTable = lastLines.some(l => l.trim().startsWith("|"));
+  if (inTable) {
+    // 找到最后一个表格开始前的空行
+    let tableStart = lines.length - 1;
+    while (tableStart >= 0 && lines[tableStart].trim() !== "" && !lines[tableStart].trim().startsWith("|")) {
+      tableStart--;
+    }
+    // 回退到表格前
+    let safeEnd = tableStart;
+    while (safeEnd > 0 && lines[safeEnd - 1].trim() === "") {
+      safeEnd--;
+    }
+    if (safeEnd > limit * 0.3) {
+      truncated = lines.slice(0, safeEnd).join("\n").trimEnd();
+    }
+  }
+
+  return truncated + suffix;
+}
+
 // ── 主优化函数 ───────────────────────────────────────────────────
 
 /**

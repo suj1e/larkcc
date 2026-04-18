@@ -13,8 +13,6 @@ export type { SanitizeResult } from "./sanitize.js";
 // 卡片处理
 export {
   buildMarkdownCard,
-  buildTextCard,
-  buildStatusCard,
   sendMarkdownCardMessage,
 } from "./card.js";
 
@@ -61,7 +59,7 @@ export {
 export type { Block, TextElement, TextElementStyle, TableData, DocumentBlockItem, CalloutCreateData, TableCreateData, CellData } from "./builder.js";
 
 // 卡片优化
-export { optimizeForCard } from "./card-optimize.js";
+export { optimizeForCard, truncateSafely } from "./card-optimize.js";
 
 // Thinking 解析
 export { parseThinking, stripThinking } from "./thinking.js";
