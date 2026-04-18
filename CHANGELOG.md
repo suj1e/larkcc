@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-04-18
+
+### Changed
+
+- Redesign sub-agent task panel card: fixed header title to `🤖 Sub Agent` with description as subtitle, removed `text_tag_list` (no duplicate elapsed time), removed body `hr` dividers for compact layout
+- Footer now shows on all states: running displays `⏱ elapsed`, terminal states add `🪙 tokens`
+- Removed `cardTitle` parameter chain from `TaskPanelCardOptions`, `sendTaskCard`, `TaskPanelController`, and agent instantiation
+
 ## [0.10.1] - 2026-04-18
 
 ### Fixed
