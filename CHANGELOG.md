@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-04-18
+
+### Added
+
+- Sub-agent task panel cards: header icon, subtitle, text_tag_list (elapsed time + tokens), terminal-state footer
+- Fallback overflow document cards: header with stats tags + footer (previously plain markdown)
+- `/updeps` slash command: interactive 3-phase dependency upgrade tool (overview → plan → execute)
+- `/issues` slash command: report manually created GitHub Issues (excludes auto deps-update)
+- `.github/workflows/notify.yml`: Feishu notifications for new Issues, PRs, comments + daily digest
+- `headerIconImgKey` passthrough from config to CardKit, TaskPanel, and CompleteOptions
+
+### Changed
+
+- CardKit overflow cards now use header tags + footer instead of appending raw metadata text
+- Sub-agent card body simplified: status line only shows icon + label + last tool (elapsed/tokens moved to header)
+
+### Fixed
+
+- CardKit `handleOverflow` now passes `stats` to `buildFinalCard` (was missing header tags and footer)
+- Removed duplicate metadata display in overflow document cards
+
 ## [0.9.0] - 2026-04-18
 
 ### Added
