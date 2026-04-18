@@ -145,7 +145,6 @@ export async function runAgent(
         client,
         chatId,
         rootMsgId,
-        cardTitle: config.card_title ?? "Claude",
         headerIconImgKey: config.header_icon_img_key,
       })
     : null;

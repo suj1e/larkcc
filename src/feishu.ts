@@ -779,7 +779,6 @@ export interface TaskPanelCardOptions {
   lastToolName?: string;
   elapsedSeconds?: number;
   tokens?: number;
-  cardTitle?: string;
   headerIconImgKey?: string;
 }
 
@@ -790,84 +789,53 @@ const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; la
   stopped:  { color: "grey",     icon: "⏹",  label: "Stopped" },
 };
 
+function fmtDur(sec: number): string {
+  return sec < 60
+    ? `${sec.toFixed(0)}s`
+    : `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
+}
+
 export function buildTaskPanelCard(options: TaskPanelCardOptions) {
-  const { description, status, summary, lastToolName, elapsedSeconds, tokens, cardTitle, headerIconImgKey } = options;
+  const { description, status, summary, lastToolName, elapsedSeconds, tokens, headerIconImgKey } = options;
   const st = STATUS_TEMPLATE[status];
 
   const elements: any[] = [];
 
-  // 状态行：icon + label + last tool
-  const statusParts: string[] = [];
-  statusParts.push(`**${st.icon} ${st.label}**`);
-  if (lastToolName) statusParts.push(`Tool: \`${lastToolName}\``);
+  // 状态行
+  const statusParts: string[] = [`**${st.icon} ${st.label}**`];
+  if (lastToolName && status === "running") statusParts.push(`Tool: \`${lastToolName}\``);
+  elements.push({ tag: "markdown", content: statusParts.join(" · ") });
 
-  elements.push({
-    tag: "markdown",
-    content: statusParts.join(" · "),
-  });
-
-  // 分割线
-  elements.push({ tag: "hr" });
-
-  // 内容区域
-  if (summary) {
-    elements.push({ tag: "markdown", content: summary.length > 3000 ? summary.slice(0, 3000) + "..." : summary });
+  // 内容区（无 hr）
+  const hasContent = summary && summary !== "Done" && summary !== "Aborted";
+  if (hasContent) {
+    elements.push({ tag: "markdown", content: summary!.length > 3000 ? summary!.slice(0, 3000) + "..." : summary });
   } else if (status === "running") {
     elements.push({ tag: "markdown", content: "Processing..." });
   }
 
-  // 终态 footer
-  if ((status === "completed" || status === "failed" || status === "stopped") && (tokens != null || elapsedSeconds != null)) {
-    const footerParts: string[] = [];
-    if (tokens != null) footerParts.push(`📥 ${tokens.toLocaleString()}`);
-    if (elapsedSeconds != null) {
-      const dur = elapsedSeconds < 60
-        ? `${elapsedSeconds.toFixed(0)}s`
-        : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
-      footerParts.push(`⏱ ${dur}`);
-    }
-    elements.push(
-      { tag: "hr" },
-      { tag: "markdown", content: `<font color='grey'>${footerParts.join(" · ")}</font>`, text_size: "notation" },
-    );
+  // Footer（所有状态）
+  const footerParts: string[] = [];
+  if (elapsedSeconds != null) footerParts.push(`⏱ ${fmtDur(elapsedSeconds)}`);
+  if (status !== "running" && tokens != null) footerParts.push(`🪙 ${tokens.toLocaleString()} tokens`);
+  if (footerParts.length > 0) {
+    elements.push({ tag: "markdown", content: `<font color='grey'>${footerParts.join(" · ")}</font>` });
   }
 
-  // Header tags: elapsed time + tokens
-  const tags: Array<{ text: string; color: string }> = [];
-  if (elapsedSeconds != null) {
-    const dur = elapsedSeconds < 60
-      ? `${elapsedSeconds.toFixed(0)}s`
-      : `${Math.floor(elapsedSeconds / 60)}m ${Math.round(elapsedSeconds % 60)}s`;
-    tags.push({ text: dur, color: "orange" });
-  }
-  if (tokens != null) {
-    tags.push({ text: `${tokens.toLocaleString()} tokens`, color: "turquoise" });
-  }
-
-  // Header icon
+  // Header（固定标题，无 tags）
   const icon = headerIconImgKey
     ? { tag: "custom_icon", img_key: headerIconImgKey }
     : { tag: "standard_icon", token: "larkcommunity_colorful" };
 
-  const header: any = {
-    title: { tag: "plain_text", content: cardTitle ?? "Sub Agent" },
-    subtitle: { tag: "plain_text", content: description },
-    template: st.color,
-    icon,
-  };
-
-  if (tags.length > 0) {
-    header.text_tag_list = tags.slice(0, 3).map(t => ({
-      tag: "text_tag",
-      text: { tag: "plain_text", content: t.text },
-      color: t.color,
-    }));
-  }
-
   return {
     schema: "2.0",
     config: { wide_screen_mode: true },
-    header,
+    header: {
+      title: { tag: "plain_text", content: "🤖 Sub Agent" },
+      subtitle: { tag: "plain_text", content: description },
+      template: st.color,
+      icon,
+    },
     body: { elements },
   };
 }
@@ -877,10 +845,9 @@ export async function sendTaskCard(
   chatId: string,
   rootMsgId: string,
   description: string,
-  cardTitle?: string,
   headerIconImgKey?: string,
 ): Promise<string> {
-  const card = buildTaskPanelCard({ description, status: "running", cardTitle, headerIconImgKey });
+  const card = buildTaskPanelCard({ description, status: "running", headerIconImgKey });
   const res = await (client.im.message as any).reply({
     path: { message_id: rootMsgId },
     data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },

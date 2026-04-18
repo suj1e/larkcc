@@ -24,7 +24,6 @@ export interface TaskPanelControllerOptions {
   client: lark.Client;
   chatId: string;
   rootMsgId: string;
-  cardTitle?: string;
   headerIconImgKey?: string;
 }
 
@@ -32,7 +31,6 @@ export class TaskPanelController {
   private client: lark.Client;
   private chatId: string;
   private rootMsgId: string;
-  private cardTitle?: string;
   private headerIconImgKey?: string;
   private tasks = new Map<string, TaskState>();
 
@@ -40,7 +38,6 @@ export class TaskPanelController {
     this.client = options.client;
     this.chatId = options.chatId;
     this.rootMsgId = options.rootMsgId;
-    this.cardTitle = options.cardTitle;
     this.headerIconImgKey = options.headerIconImgKey;
   }
 
@@ -57,7 +54,6 @@ export class TaskPanelController {
         this.chatId,
         this.rootMsgId,
         event.description.slice(0, 80),
-        this.cardTitle,
         this.headerIconImgKey,
       );
       this.tasks.set(event.task_id, {
@@ -98,7 +94,6 @@ export class TaskPanelController {
         lastToolName: task.lastToolName,
         elapsedSeconds: (Date.now() - task.startTime) / 1000,
         tokens: task.tokens,
-        cardTitle: this.cardTitle,
         headerIconImgKey: this.headerIconImgKey,
       });
     } catch (err) {
@@ -131,7 +126,6 @@ export class TaskPanelController {
         summary: event.summary,
         elapsedSeconds,
         tokens: task.tokens,
-        cardTitle: this.cardTitle,
         headerIconImgKey: this.headerIconImgKey,
       });
       logger.dim(`[task-panel] ${event.status}: ${task.description.slice(0, 40)}`);
@@ -152,7 +146,6 @@ export class TaskPanelController {
           summary: task.summary ?? "Aborted",
           elapsedSeconds: (Date.now() - task.startTime) / 1000,
           tokens: task.tokens,
-          cardTitle: this.cardTitle,
         });
       } catch (err) {
         console.error("[task-panel] failed to abort card:", err);
@@ -172,7 +165,6 @@ export class TaskPanelController {
           summary: task.summary ?? "Done",
           elapsedSeconds: (Date.now() - task.startTime) / 1000,
           tokens: task.tokens,
-          cardTitle: this.cardTitle,
         });
       } catch (err) {
         console.error("[task-panel] failed to complete card:", err);
