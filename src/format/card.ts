@@ -4,6 +4,77 @@
 
 import type { Client } from "@larksuiteoapi/node-sdk";
 import { sanitizeContent, formatWarnings } from "./sanitize.js";
+import { formatDuration } from "./duration.js";
+
+// ── Header 构建器 ──────────────────────────────────────────
+
+export interface HeaderOptions {
+  title: string;
+  subtitle?: string;
+  template?: string;
+  iconImgKey?: string;
+  iconToken?: string;
+  tags?: Array<{ text: string; color: string }>;
+}
+
+const DEFAULT_ICON_TOKEN = "larkcommunity_colorful";
+
+export function buildHeader(options: HeaderOptions): any {
+  const header: any = {
+    title: { tag: "plain_text", content: options.title },
+    template: options.template ?? "blue",
+  };
+
+  if (options.subtitle) {
+    header.subtitle = { tag: "plain_text", content: options.subtitle };
+  }
+
+  if (options.iconImgKey) {
+    header.icon = { tag: "custom_icon", img_key: options.iconImgKey };
+  } else {
+    header.icon = {
+      tag: "standard_icon",
+      token: options.iconToken ?? DEFAULT_ICON_TOKEN,
+    };
+  }
+
+  if (options.tags?.length) {
+    header.text_tag_list = options.tags.slice(0, 3).map(t => ({
+      tag: "text_tag",
+      text: { tag: "plain_text", content: t.text },
+      color: t.color,
+    }));
+  }
+
+  return header;
+}
+
+// ── Footer 构建器 ──────────────────────────────────────────
+
+export interface FooterStats {
+  inputTokens?: number;
+  outputTokens?: number;
+  toolCount?: number;
+  duration?: number;
+}
+
+export function buildFooterMarkdown(stats: FooterStats): string | null {
+  const parts: string[] = [];
+
+  if (stats.inputTokens != null) {
+    parts.push(`📥 ${stats.inputTokens.toLocaleString()}`);
+  }
+  if (stats.outputTokens != null) {
+    parts.push(`📤 ${stats.outputTokens.toLocaleString()}`);
+  }
+  if (stats.toolCount != null && stats.toolCount > 0) {
+    parts.push(`🔧 ${stats.toolCount}`);
+  }
+
+  if (parts.length === 0) return null;
+
+  return `<font color='grey'>${parts.join(" · ")}</font>`;
+}
 
 /**
  * 构建 Markdown 卡片

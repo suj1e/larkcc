@@ -520,6 +520,7 @@ export async function updateToolCard(
     elements.push({
       tag: "collapsible_panel",
       expanded: false,
+      background_style: "grey",
       header: {
         title: {
           tag: "plain_text",

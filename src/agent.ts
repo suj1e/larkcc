@@ -114,6 +114,7 @@ export async function runAgent(
   let textBuffer = "";
   let thinkingBuffer = "";
   let reasoningStartTime: number | null = null;
+  let toolCallCount = 0;
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
 
   // 构建 ReplyContext
@@ -134,6 +135,7 @@ export async function runAgent(
       thinkingEnabled: config.streaming?.thinking_enabled === true,
       context: replyContext,
       intervalMs: config.streaming?.flush_interval_ms || 300,
+      headerIconImgKey: config.header_icon_img_key,
     });
   }
 
@@ -244,13 +246,14 @@ export async function runAgent(
         }
 
         if (block.type === "tool_use" && block.id && block.name) {
+          toolCallCount++;
           // CardKit 模式：更新状态栏，不发工具卡片
           if (isCardkitMode) {
             if (SILENT_TOOLS.has(block.name)) break;
             const label = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
             const detail = formatInput(block.name, block.input ?? {});
             logger.tool(block.name, detail);
-            await cardkitCtrl?.updateStatus(`🔄 ${label} ${detail}`);
+            await cardkitCtrl?.updateStatus(`<text_tag color='orange'>${label}</text_tag> \`${detail}\``);
             break;
           }
           if (SILENT_TOOLS.has(block.name)) break;
@@ -335,6 +338,8 @@ export async function runAgent(
         const modelUsage = resultEvent.modelUsage;
         let model: string | undefined;
         let tokens: number | undefined;
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
         if (modelUsage) {
           let maxTokens = 0;
           for (const [modelName, usage] of Object.entries(modelUsage)) {
@@ -342,6 +347,8 @@ export async function runAgent(
             if (total > maxTokens) {
               maxTokens = total;
               model = modelName;
+              inputTokens = usage.inputTokens;
+              outputTokens = usage.outputTokens;
             }
           }
           tokens = maxTokens || undefined;
@@ -382,6 +389,13 @@ export async function runAgent(
           thinking,
           reasoningElapsedMs,
           cardTitle: config.card_title,
+          stats: {
+            model,
+            inputTokens,
+            outputTokens,
+            duration: elapsedSeconds,
+            toolCount: toolCallCount,
+          },
         };
 
         if (cardkitCtrl) {

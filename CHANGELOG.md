@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-18
+
+### Added
+
+- CardKit streaming card visual enhancement: dynamic header with state-aware colors (indigo=thinking, green=completed, grey=aborted)
+- Header icon support: `standard_icon` (default `larkcommunity_colorful`) with configurable `header_icon_img_key` for custom icon
+- Header `text_tag_list` pills showing model name, total tokens (input+output), and duration
+- Header subtitle showing current state text ("正在思考..." / "对话完成" / "已停止")
+- Footer stats bar with lightweight grey text showing input/output tokens and tool call count
+- `buildHeader()` and `buildFooterMarkdown()` builder functions for card header/footer construction
+- `width_mode: "fill"` for full-width CardKit cards
+- Dynamic summary text via `closeStreamingMode()` (e.g. "🤔 Claude 正在思考..." → "✅ Claude · 对话完成")
+- Tool status display as `<text_tag>` in streaming content
+- Thinking panel with `background_style: "wathet"`
+- Tool collapsible panel with `background_style: "grey"`
+- Separate `buildAbortCard()` for clean abort-state rendering
+
+### Changed
+
+- CardKit mode no longer appends metadata (`⏱ · model · tokens`) to card body — stats moved to header tags + footer
+- Card creation starts with empty content instead of "⏳ 思考中..."
+- Token display changed from output-only to total (input + output) in header
+
 ## [0.8.0] - 2026-04-12
 
 ### Added

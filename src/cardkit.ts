@@ -21,7 +21,8 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
-import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
+import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE, formatDuration } from "./format/duration.js";
+import { buildHeader, buildFooterMarkdown } from "./format/card.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
 import type { ReplyContext } from "./feishu.js";
 import type { CompleteOptions, FlushControllerOptions } from "./streaming.js";
@@ -84,6 +85,8 @@ export class CardKitController {
 
   private flushCtrl: FlushController;
 
+  private headerIconImgKey?: string;
+
   constructor(params: {
     client: lark.Client;
     rootMsgId: string;
@@ -91,12 +94,14 @@ export class CardKitController {
     thinkingEnabled: boolean;
     context: ReplyContext;
     intervalMs: number;
+    headerIconImgKey?: string;
   }) {
     this.client = params.client;
     this.rootMsgId = params.rootMsgId;
     this.cardTitle = params.cardTitle;
     this.thinkingEnabled = params.thinkingEnabled;
     this.context = params.context;
+    this.headerIconImgKey = params.headerIconImgKey;
 
     this.flushCtrl = new FlushController({
       minIntervalMs: params.intervalMs,
@@ -195,11 +200,8 @@ export class CardKitController {
       return;
     }
 
-    // 构建最终内容（含 metadata）
+    // 构建最终内容（CardKit 模式下不拼接 metadata，header + footer 已覆盖）
     let content = finalContent;
-    if (options?.metadata) {
-      content += `\n\n---\n${options.metadata}`;
-    }
 
     // ── 溢出检查（在 optimizeForCard 之前，避免溢出路径的无用计算） ──
     const threshold = this.context.overflow.document.threshold;
@@ -216,7 +218,7 @@ export class CardKitController {
     const optimized = optimizeForCard(content);
     const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
     try {
-      const finalCardJson = this.buildFinalCard(optimized, extraElements);
+      const finalCardJson = this.buildFinalCard(optimized, extraElements, options?.stats);
       await this.closeAndFinalize(finalCardJson);
     } catch (error) {
       console.error("[CARDKIT] Final update failed, sending as new message:", error);
@@ -247,7 +249,7 @@ export class CardKitController {
     const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
 
     try {
-      const abortCardJson = this.buildFinalCard(optimized, extraElements);
+      const abortCardJson = this.buildAbortCard(optimized, extraElements);
       await this.closeAndFinalize(abortCardJson);
     } catch (error) {
       console.error("[CARDKIT] Abort update failed:", error);
@@ -267,6 +269,40 @@ export class CardKitController {
   private appendFallbackHint(existing?: string): string {
     const hint = "⚠️ 卡片模式不可用，已降级为普通消息";
     return existing ? `${existing}\n${hint}` : hint;
+  }
+
+  /**
+   * 构建中止态卡片（grey header）
+   */
+  private buildAbortCard(content: string, extraElements?: any[]): any {
+    const elements: any[] = [
+      ...(extraElements ?? []),
+      {
+        tag: "markdown",
+        content,
+        element_id: this.streamElementId,
+      },
+    ];
+
+    const cardJson: any = {
+      schema: "2.0",
+      config: {
+        wide_screen_mode: true,
+        width_mode: "fill",
+      },
+      body: { elements },
+    };
+
+    if (this.cardTitle) {
+      cardJson.header = buildHeader({
+        title: this.cardTitle,
+        subtitle: "已停止",
+        template: "grey",
+        iconImgKey: this.headerIconImgKey,
+      });
+    }
+
+    return cardJson;
   }
 
   // ── 卡片创建（懒触发） ────────────────────────────────────
@@ -307,19 +343,20 @@ export class CardKitController {
         streaming_mode: true,
         wide_screen_mode: true,
         update_multi: true,
+        width_mode: "fill",
       },
       summary: {
-        content: "思考中...",
+        content: "🤔 Claude 正在思考...",
         i18n_content: {
-          zh_cn: "思考中...",
-          en_us: "Thinking...",
+          zh_cn: "🤔 Claude 正在思考...",
+          en_us: "🤔 Claude is thinking...",
         },
       },
       body: {
         elements: [
           {
             tag: "markdown",
-            content: "⏳ 思考中...",
+            content: "",
             element_id: this.streamElementId,
           },
         ],
@@ -327,10 +364,12 @@ export class CardKitController {
     };
 
     if (this.cardTitle) {
-      cardJson.header = {
-        title: { tag: "plain_text", content: this.cardTitle },
-        template: "blue",
-      };
+      cardJson.header = buildHeader({
+        title: this.cardTitle,
+        subtitle: "正在思考...",
+        template: "indigo",
+        iconImgKey: this.headerIconImgKey,
+      });
     }
 
     const res = await this.client.cardkit.v1.card.create({
@@ -463,13 +502,20 @@ export class CardKitController {
   // ── CardKit API helpers（使用 SDK） ──────────────────────
 
   /**
-   * 关闭 streaming_mode（对齐 openclaw-lark 两步关闭的第一步）
+   * 关闭 streaming_mode 并更新 summary（对齐 openclaw-lark 两步关闭的第一步）
    */
-  private async closeStreamingMode(): Promise<void> {
+  private async closeStreamingMode(summaryContent?: string): Promise<void> {
+    const summary = summaryContent ?? "✅ Claude · 对话完成";
     const res = await this.client.cardkit.v1.card.settings({
       path: { card_id: this.cardId! },
       data: {
-        settings: JSON.stringify({ streaming_mode: false }),
+        settings: JSON.stringify({
+          streaming_mode: false,
+          summary: {
+            content: summary,
+            i18n_content: { zh_cn: summary, en_us: summary },
+          },
+        }),
         sequence: this.sequence,
       },
     });
@@ -502,29 +548,55 @@ export class CardKitController {
   /**
    * 构建最终卡片 JSON
    */
-  private buildFinalCard(content: string, extraElements?: any[]): any {
+  private buildFinalCard(content: string, extraElements?: any[], stats?: CompleteOptions['stats']): any {
+    const elements: any[] = [
+      ...(extraElements ?? []),
+      {
+        tag: "markdown",
+        content,
+        element_id: this.streamElementId,
+      },
+    ];
+
+    const footer = buildFooterMarkdown({
+      inputTokens: stats?.inputTokens,
+      outputTokens: stats?.outputTokens,
+      toolCount: stats?.toolCount,
+      duration: stats?.duration,
+    });
+    if (footer) {
+      elements.push({ tag: "hr" }, { tag: "markdown", content: footer, text_size: "notation" });
+    }
+
     const cardJson: any = {
       schema: "2.0",
       config: {
         wide_screen_mode: true,
+        width_mode: "fill",
       },
-      body: {
-        elements: [
-          ...(extraElements ?? []),
-          {
-            tag: "markdown",
-            content,
-            element_id: this.streamElementId,
-          },
-        ],
-      },
+      body: { elements },
     };
 
     if (this.cardTitle) {
-      cardJson.header = {
-        title: { tag: "plain_text", content: this.cardTitle },
-        template: "blue",
-      };
+      const tags: Array<{ text: string; color: string }> = [];
+      if (stats?.model) {
+        tags.push({ text: stats.model, color: "blue" });
+      }
+      const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
+      if (totalTokens > 0) {
+        tags.push({ text: `${totalTokens.toLocaleString()} tokens`, color: "turquoise" });
+      }
+      if (stats?.duration != null) {
+        tags.push({ text: formatDuration(stats.duration), color: "orange" });
+      }
+
+      cardJson.header = buildHeader({
+        title: this.cardTitle,
+        subtitle: "对话完成",
+        template: "green",
+        iconImgKey: this.headerIconImgKey,
+        tags,
+      });
     }
 
     return cardJson;

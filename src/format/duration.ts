@@ -53,6 +53,7 @@ export function buildThinkingPanel(options: ThinkingPanelOptions): any[] {
     {
       tag: "collapsible_panel",
       expanded: false,
+      background_style: "wathet",
       header: {
         title: {
           tag: "markdown",

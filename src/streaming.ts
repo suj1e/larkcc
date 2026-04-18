@@ -167,6 +167,14 @@ export interface CompleteOptions {
   reasoningElapsedMs?: number;
   /** 卡片标题 */
   cardTitle?: string;
+  /** 结构化统计数据（CardKit 模式使用） */
+  stats?: {
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    duration?: number;
+    toolCount?: number;
+  };
 }
 
 export interface IStreamingCard {

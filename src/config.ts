@@ -91,6 +91,7 @@ export interface LarkccConfig extends ProfileConfig {
   reaction?: ReactionConfig;
   processing_timeout_ms?: number;
   card_title?: string;
+  header_icon_img_key?: string;
   card_table?: CardTableConfig;
   format_guide?: FormatGuideConfig;
   streaming?: StreamingConfig;
@@ -114,6 +115,7 @@ export interface RawConfig {
   reaction?: ReactionConfig;     // reaction emoji 配置
   processing_timeout_ms?: number; // 处理超时（毫秒）
   card_title?: string;           // 卡片标题
+  header_icon_img_key?: string;  // 自定义 header 图标 img_key
   card_table?: CardTableConfig;  // 卡片表格限制配置
   profiles?: Record<string, Partial<ProfileConfig>>;
 }
@@ -288,6 +290,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     },
     processing_timeout_ms: raw.processing_timeout_ms ?? DEFAULT_PROCESSING_TIMEOUT_MS,
     card_title: raw.card_title ?? DEFAULT_CARD_TITLE,
+    header_icon_img_key: raw.header_icon_img_key,
     card_table: {
       max_tables_per_card: raw.card_table?.max_tables_per_card ?? DEFAULT_CARD_TABLE.max_tables_per_card,
     },
