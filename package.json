@@ -49,6 +49,7 @@
     "@larksuiteoapi/node-sdk": "^1.61.1",
     "chalk": "^5",
     "commander": "^14",
+    "https-proxy-agent": "^9.0.0",
     "js-yaml": "^4"
   },
   "devDependencies": {

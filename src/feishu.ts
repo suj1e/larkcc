@@ -2,6 +2,7 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { OverflowConfig, CardTableConfig } from "./config.js";
 import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType, parseInlineText } from "./format/index.js";
 import { buildThinkingPanel } from "./format/duration.js";
@@ -76,7 +77,12 @@ export function createLarkClient(appId: string, appSecret: string) {
 }
 
 export function createWSClient(appId: string, appSecret: string) {
-  return new lark.WSClient({ appId, appSecret });
+  const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY;
+  const options: ConstructorParameters<typeof lark.WSClient>[0] & { agent?: any } = { appId, appSecret };
+  if (proxyUrl) {
+    options.agent = new HttpsProxyAgent(proxyUrl);
+  }
+  return new lark.WSClient(options as any);
 }
 
 // ── 消息发送 ─────────────────────────────────────────────────
