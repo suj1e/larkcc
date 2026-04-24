@@ -213,6 +213,7 @@ export async function runAgent(
         allowedTools: config.claude.allowed_tools,
         abortController,
         agentProgressSummaries: true,
+        pathToClaudeCodeExecutable: execSync("which claude 2>/dev/null || echo ''", { encoding: "utf8" }).trim() || undefined,
         ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
     })) {
