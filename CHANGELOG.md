@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-04-24
+
+### Added
+
+- HTTPS proxy support for WebSocket client (`https_proxy` / `HTTPS_PROXY` env vars)
+- Auto-detect Claude CLI path for agent SDK
+
+### Changed
+
+- Update `@anthropic-ai/claude-agent-sdk` 0.2.92 → 0.2.114
+- Update `@larksuiteoapi/node-sdk` 1.60.0 → 1.61.1
+
 ## [0.10.2] - 2026-04-18
 
 ### Changed
