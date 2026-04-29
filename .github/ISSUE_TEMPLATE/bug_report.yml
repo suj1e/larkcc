@@ -49,7 +49,7 @@ body:
     attributes:
       label: larkcc Version
       description: Run `larkcc --version` or check package.json
-      placeholder: "0.1.0"
+      placeholder: "e.g. 0.11.0"
     validations:
       required: true
 
@@ -58,7 +58,7 @@ body:
     attributes:
       label: Node.js Version
       description: Run `node --version`
-      placeholder: "v18.x.x"
+      placeholder: "e.g. v22.x.x"
     validations:
       required: true
 
