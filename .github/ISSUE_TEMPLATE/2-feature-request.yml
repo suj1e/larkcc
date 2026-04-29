@@ -1,0 +1,29 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先搜索已有 Issue，如果找到类似的请点 👍 而不是重复提交。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: 这个功能要解决什么问题？
+      placeholder: 我总是希望 larkcc 能...
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: 你希望怎么实现？
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: 其他补充信息

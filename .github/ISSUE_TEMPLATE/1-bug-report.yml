@@ -5,7 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug! Please fill out the sections below.
+        提交前请先搜索已有 Issue，如果找到相同的请点 👍 而不是重复提交。
+        请确认你使用的是最新版本。
+
+        如果你需要帮助或有问题想讨论，请前往 [Discussions](https://github.com/suj1e/larkcc/discussions)。
 
   - type: textarea
     id: description
