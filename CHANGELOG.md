@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-04-29
+
+### Fixed
+
+- Rewrite Feishu Notify workflow with Node.js to fix shell injection vulnerability in `${{ }}` interpolation of user content
+- Add proxy support (`undici.ProxyAgent`) to all fetch calls for cloud document creation, token refresh, and image upload
+- Remove conflicting `version: 9` param from pnpm/action-setup across workflows, use `packageManager` field from package.json instead
+
+### Changed
+
+- Unify Node.js v22 and pnpm/action-setup@v4 across all workflows (ci, deps-check, notify, release)
+- Streamline GitHub templates: numeric prefix for display order, dedup notice on bug report, remove Priority/Alternatives from feature request, simplify PR template to minimal hint
+
 ## [0.11.0] - 2026-04-24
 
 ### Added
