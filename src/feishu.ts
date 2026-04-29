@@ -2,6 +2,8 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
+import type { Dispatcher } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { OverflowConfig, CardTableConfig } from "./config.js";
 import { sanitizeContent, formatWarnings, markdownToBlocks, DocumentMeta, countTables, optimizeForCard, BlockType, parseInlineText } from "./format/index.js";
@@ -70,6 +72,22 @@ function removeDocumentRecord(docId: string, profile: string): void {
   const records = loadDocRegistry(profile);
   const filtered = records.filter(r => r.id !== docId);
   saveDocRegistry(profile, filtered);
+}
+
+// ── 代理感知 fetch ──────────────────────────────────────────────
+
+let _proxyDispatcher: Dispatcher | undefined;
+
+function getProxyDispatcher(): Dispatcher | undefined {
+  const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY;
+  if (!proxyUrl) return undefined;
+  if (!_proxyDispatcher) _proxyDispatcher = new ProxyAgent(proxyUrl);
+  return _proxyDispatcher;
+}
+
+function fetchWithProxy(url: string | URL, init?: Record<string, unknown>) {
+  const dispatcher = getProxyDispatcher();
+  return undiciFetch(url, dispatcher ? { ...init, dispatcher } : init);
 }
 
 export function createLarkClient(appId: string, appSecret: string) {
@@ -946,7 +964,7 @@ export interface ReplyContext {
 /**
  * 安全解析 JSON 响应
  */
-async function safeJsonParse(res: Response, context: string): Promise<any> {
+async function safeJsonParse(res: { ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> }, context: string): Promise<any> {
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`${context} failed (${res.status}): ${text.slice(0, 200)}`);
@@ -1004,7 +1022,7 @@ export async function createOverflowDocument(
   const { items } = markdownToBlocks(markdown, originalMessage, meta);
 
   // 2. 创建文档（不指定 folder_token，创建在应用云空间）
-  const createRes = await fetch("https://open.feishu.cn/open-apis/docx/v1/documents", {
+  const createRes = await fetchWithProxy("https://open.feishu.cn/open-apis/docx/v1/documents", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -1127,7 +1145,7 @@ async function createDocViaMCP(
     },
   };
 
-  const res = await fetch("https://mcp.feishu.cn/mcp", {
+  const res = await fetchWithProxy("https://mcp.feishu.cn/mcp", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1185,7 +1203,7 @@ async function batchCreateBlocks(
   const maxRetries = 3;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, {
+    const res = await fetchWithProxy(url, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -1268,7 +1286,7 @@ export async function getTenantAccessToken(appId: string, appSecret: string): Pr
     return cachedToken.token;
   }
 
-  const res = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+  const res = await fetchWithProxy("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1313,7 +1331,7 @@ export async function cleanupOldDocuments(
 
     for (const doc of toDelete) {
       try {
-        const deleteRes = await fetch(`https://open.feishu.cn/open-apis/drive/v1/files/${doc.id}?type=docx`, {
+        const deleteRes = await fetchWithProxy(`https://open.feishu.cn/open-apis/drive/v1/files/${doc.id}?type=docx`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${token}`,

@@ -15,6 +15,19 @@
  */
 
 import { extractCodeBlocks, restoreCodeBlocks } from "./card-optimize.js";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
+import type { Dispatcher } from "undici";
+
+// ── 代理感知 fetch ─────────────────────────────────────────
+
+let _proxyDispatcher: Dispatcher | undefined;
+
+function fetchWithProxy(url: string | URL, init?: Record<string, unknown>) {
+  const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY;
+  if (!proxyUrl) return undiciFetch(url, init);
+  if (!_proxyDispatcher) _proxyDispatcher = new ProxyAgent(proxyUrl);
+  return undiciFetch(url, { ...init, dispatcher: _proxyDispatcher });
+}
 
 // ── 常量 ───────────────────────────────────────────────────
 
@@ -132,7 +145,7 @@ async function downloadExternalImage(url: string): Promise<Buffer | null> {
   const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       signal: controller.signal,
       headers: {
         // 添加 User-Agent 避免某些服务器拒绝无 UA 请求
@@ -195,7 +208,7 @@ async function uploadImageToFeishu(buffer: Buffer, token: string): Promise<strin
     formData.append("image_type", "message");
     formData.append("image", new Blob([new Uint8Array(buffer)], { type: mediaType }), `image.${ext}`);
 
-    const response = await fetch(IMAGE_UPLOAD_URL, {
+    const response = await fetchWithProxy(IMAGE_UPLOAD_URL, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
