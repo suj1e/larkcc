@@ -50,7 +50,16 @@ const profile: string | undefined = opts.profile;
 // daemon 模式
 if (opts.daemon) {
   const { spawn } = await import("child_process");
+  const { checkLock } = await import("./app.js");
+
+  // 父进程有 stdin，先检查锁冲突并处理（确认或 force）
+  await checkLock(cwd, profile, opts.force ?? false);
+
   const args = process.argv.slice(1).filter(a => !["-d", "--daemon"].includes(a));
+  // 锁冲突已由父进程处理，子进程带 force 跳过二次检查
+  if (!args.includes("--force") && !args.includes("-f")) {
+    args.push("--force");
+  }
   const child = spawn(process.execPath, args, { detached: true, stdio: "ignore" });
   child.unref();
   logger.success(`larkcc started in background (pid: ${child.pid})`);
@@ -324,4 +333,4 @@ try {
 // 初始化 session（按 profile 隔离）
 initSession(profile);
 
-await startApp(cwd, config, profile, opts.continue ?? false);
+await startApp(cwd, config, profile, opts.continue ?? false, opts.force ?? false);

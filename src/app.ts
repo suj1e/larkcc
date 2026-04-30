@@ -47,26 +47,34 @@ function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-async function checkLock(cwd: string, profile?: string): Promise<void> {
+export async function checkLock(cwd: string, profile?: string, force = false): Promise<void> {
   const lock = readLock(profile);
   if (!lock) return;
   if (!isProcessAlive(lock.pid)) { clearLock(profile); return; }
   if (lock.cwd === cwd && lock.pid === process.pid) return;
 
   const profileLabel = profile ? `[${profile}] ` : "";
+  const profileName = profile ?? "default";
   logger.warn(`${profileLabel}Already running!`);
   logger.warn(`  PID: ${lock.pid}`);
   logger.warn(`  Project: ${lock.cwd}`);
   logger.warn(`  Started: ${lock.startedAt}`);
-  console.log("");
 
-  const answer = await new Promise<string>((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question("  Continue anyway? (y/n): ", (a) => { rl.close(); resolve(a.trim().toLowerCase()); });
-  });
+  if (!force) {
+    console.log("");
+    const answer = await new Promise<string>((resolve) => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.question("  Continue anyway? (y/n): ", (a) => { rl.close(); resolve(a.trim().toLowerCase()); });
+    });
+    if (answer !== "y") { logger.info("Aborted."); process.exit(0); }
+  }
 
-  if (answer !== "y") { logger.info("Aborted."); process.exit(0); }
-  clearLock(profile);
+  logger.info(`Terminating existing process (PID: ${lock.pid})...`);
+  const result = killProcess(lock.pid, profileName);
+  if (!result.success) {
+    logger.error(`Failed to terminate (PID: ${lock.pid}): ${result.error}`);
+    process.exit(1);
+  }
 }
 
 export interface RunningProcess {
@@ -252,7 +260,8 @@ export async function startApp(
   cwd: string,
   config: LarkccConfig,
   profile: string | undefined,
-  continueSession = false
+  continueSession = false,
+  force = false
 ): Promise<void> {
   const { app_id, app_secret } = config.feishu;
   const getOwnerOpenId = () => config.feishu.owner_open_id;
@@ -264,7 +273,7 @@ export async function startApp(
     execSecurity: (config as any).exec_security ?? { enabled: true, blacklist: [], confirm_on_warning: true },
   };
 
-  await checkLock(cwd, profile);
+  await checkLock(cwd, profile, force);
   writeLock(cwd, profile, continueSession);
 
   injectClaudeEnv();
