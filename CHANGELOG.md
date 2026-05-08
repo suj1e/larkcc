@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-05-09
+
+### Added
+
+- Tool result collapsible panels in CardKit mode: each tool call is shown as a collapsed panel with result preview in the final card
+
+### Fixed
+
+- Fix `collapsible_panel` field: `background_style` → `background_color` (align with official Feishu card JSON v2 spec)
+
 ## [0.12.0] - 2026-05-09
 
 ### Changed
