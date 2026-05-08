@@ -1,8 +1,8 @@
 /**
- * 时间格式化 & Thinking 卡片元素构建
+ * 时间格式化 & 折叠面板构建
  *
- * 统一 CardKit 和 Update 模式的 thinking 折叠面板，
- * 对齐 openclaw-lark 的 collapsible_panel 方案。
+ * 统一 CardKit 和 Update 模式的 thinking / tool 折叠面板，
+ * 对齐飞书卡片 JSON v2 collapsible_panel 规范。
  */
 
 import { truncateSafely } from "./card-optimize.js";
@@ -11,6 +11,9 @@ import { truncateSafely } from "./card-optimize.js";
 
 /** Thinking 内容截断阈值（字符数） */
 export const THINKING_OVERFLOW_TRUNCATE = 3000;
+
+/** 工具结果截断阈值（字符数） */
+export const TOOL_RESULT_TRUNCATE = 500;
 
 // ── 时间格式化 ─────────────────────────────────────────────
 
@@ -53,7 +56,7 @@ export function buildThinkingPanel(options: ThinkingPanelOptions): any[] {
     {
       tag: "collapsible_panel",
       expanded: false,
-      background_style: "wathet",
+      background_color: "wathet",
       header: {
         title: {
           tag: "markdown",
@@ -85,4 +88,57 @@ export function buildThinkingPanel(options: ThinkingPanelOptions): any[] {
     },
     { tag: "hr" },
   ];
+}
+
+// ── 工具结果折叠面板 ─────────────────────────────────────
+
+export interface ToolResultEntry {
+  label: string;
+  detail: string;
+  resultPreview: string;
+}
+
+function buildToolResultPanel(entry: ToolResultEntry): any {
+  const preview = entry.resultPreview.length > TOOL_RESULT_TRUNCATE
+    ? truncateSafely(entry.resultPreview, TOOL_RESULT_TRUNCATE, "\n...")
+    : entry.resultPreview;
+
+  const headerTitle = entry.detail
+    ? `${entry.label} — ${entry.detail}`
+    : entry.label;
+
+  return {
+    tag: "collapsible_panel",
+    expanded: false,
+    background_color: "grey",
+    header: {
+      title: {
+        tag: "plain_text",
+        content: headerTitle,
+      },
+      vertical_align: "center",
+      icon: {
+        tag: "standard_icon",
+        token: "down-small-ccm_outlined",
+        size: "16px 16px",
+      },
+      icon_position: "right",
+      icon_expanded_angle: -180,
+    },
+    border: { color: "grey", corner_radius: "5px" },
+    vertical_spacing: "8px",
+    padding: "8px 8px 8px 8px",
+    elements: [
+      {
+        tag: "markdown",
+        content: preview,
+        text_size: "notation",
+      },
+    ],
+  };
+}
+
+export function buildToolPanels(results: ToolResultEntry[]): any[] {
+  if (results.length === 0) return [];
+  return results.map(r => buildToolResultPanel(r));
 }

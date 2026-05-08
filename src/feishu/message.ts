@@ -35,6 +35,7 @@ export interface ReplyFinalOptions {
     toolCount?: number;
   };
   headerIconImgKey?: string;
+  toolResults?: Array<{ label: string; detail: string; resultPreview: string }>;
 }
 
 /** 回复完成选项（别名，供流式模块使用） */
@@ -480,7 +481,7 @@ export async function updateToolCard(
     elements.push({
       tag: "collapsible_panel",
       expanded: false,
-      background_style: "grey",
+      background_color: "grey",
       header: {
         title: {
           tag: "plain_text",

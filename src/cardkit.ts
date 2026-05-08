@@ -21,7 +21,7 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
-import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE, formatDuration } from "./format/duration.js";
+import { buildThinkingPanel, buildToolPanels, THINKING_OVERFLOW_TRUNCATE, formatDuration } from "./format/duration.js";
 import { buildHeader, buildFooterMarkdown } from "./format/card.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
 import type { ReplyContext, CompletionOptions } from "./feishu.js";
@@ -216,7 +216,10 @@ export class CardKitController {
 
     // ── 正常完成：两步关闭（对齐 openclaw-lark） ──
     const optimized = optimizeForCard(content);
-    const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
+    const extraElements = [
+      ...this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs),
+      ...buildToolPanels(options?.toolResults ?? []),
+    ];
     try {
       const finalCardJson = this.buildFinalCard(optimized, extraElements, options?.stats);
       await this.closeAndFinalize(finalCardJson);
@@ -481,7 +484,10 @@ export class CardKitController {
       const cleanupConfig = this.context.overflow.document.cleanup;
       await cleanupOldDocuments(token, cleanupConfig.max_docs, this.context.profile);
 
-      const extraElements = this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs);
+      const extraElements = [
+        ...this.buildThinkingElements(options?.thinking, options?.reasoningElapsedMs),
+        ...buildToolPanels(options?.toolResults ?? []),
+      ];
       const finalCardJson = this.buildFinalCard(cardContent, extraElements, options?.stats);
 
       await this.closeAndFinalize(finalCardJson);

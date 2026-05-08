@@ -114,6 +114,7 @@ export async function runAgent(
   let reasoningStartTime: number | null = null;
   let toolCallCount = 0;
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
+  const cardkitToolResults: Array<{ id: string; label: string; detail: string; resultPreview?: string }> = [];
 
   // 构建 ReplyContext
   const replyContext = buildReplyContext(config, profile, cwd, chatId, rootMsgId);
@@ -248,13 +249,14 @@ export async function runAgent(
 
         if (block.type === "tool_use" && block.id && block.name) {
           toolCallCount++;
-          // CardKit 模式：更新状态栏，不发工具卡片
+          // CardKit 模式：更新状态栏，同时记录工具调用
           if (isCardkitMode) {
             if (SILENT_TOOLS.has(block.name)) break;
             const label = TOOL_LABELS[block.name] ?? `🔧 ${block.name}`;
             const detail = formatInput(block.name, block.input ?? {});
             logger.tool(block.name, detail);
             await cardkitCtrl?.updateStatus(`<text_tag color='orange'>${label}</text_tag> \`${detail}\``);
+            cardkitToolResults.push({ id: block.id, label, detail });
             break;
           }
           if (SILENT_TOOLS.has(block.name)) break;
@@ -281,9 +283,14 @@ export async function runAgent(
       }>;
       for (const block of blocks) {
         if (block.type === "tool_result" && block.tool_use_id) {
-          // CardKit 模式：清除工具状态
+          // CardKit 模式：清除工具状态，记录结果
           if (isCardkitMode) {
             await cardkitCtrl?.clearStatus();
+            const raw = typeof block.content === "string"
+              ? block.content
+              : JSON.stringify(block.content ?? "");
+            const toolEntry = cardkitToolResults.find(t => t.id === block.tool_use_id);
+            if (toolEntry) toolEntry.resultPreview = truncate(raw, 500);
             break;
           }
           const toolInfo = toolMsgMap.get(block.tool_use_id);
@@ -403,6 +410,9 @@ export async function runAgent(
             toolCount: toolCallCount,
           },
           headerIconImgKey: config.header_icon_img_key,
+          toolResults: cardkitToolResults
+            .filter(t => t.resultPreview !== undefined)
+            .map(({ label, detail, resultPreview }) => ({ label, detail, resultPreview: resultPreview! })),
         };
 
         if (cardkitCtrl) {
