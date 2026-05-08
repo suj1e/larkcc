@@ -77,9 +77,9 @@ export function buildFooterMarkdown(stats: FooterStats): string | null {
 }
 
 /**
- * 构建 Markdown 卡片
+ * 构建简单 Markdown 卡片（无 header、无 thinking）
  */
-export function buildMarkdownCard(markdown: string, warnings: string[] = []): object {
+export function buildSimpleCard(markdown: string, warnings: string[] = []): object {
   let content = markdown;
   if (warnings.length > 0) {
     content += formatWarnings(warnings);
@@ -152,7 +152,7 @@ export async function sendMarkdownCardMessage(
   const { content: sanitizedContent, warnings } = sanitizeContent(content);
 
   // 构建卡片
-  const card = buildMarkdownCard(sanitizedContent, warnings);
+  const card = buildSimpleCard(sanitizedContent, warnings);
 
   // 发送
   if (options?.reply && options.rootMsgId) {

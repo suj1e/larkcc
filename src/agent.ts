@@ -1,5 +1,4 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import os from "os";
 import { execSync } from "child_process";
 import * as lark from "@larksuiteoapi/node-sdk";
 import {
@@ -8,7 +7,7 @@ import {
   updateToolCard,
   getTenantAccessToken,
 } from "./feishu.js";
-import type { ReplyContext } from "./feishu.js";
+import type { ReplyContext, CompletionOptions } from "./feishu.js";
 import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
@@ -17,7 +16,6 @@ import { stripThinking } from "./format/thinking.js";
 import { formatDuration } from "./format/duration.js";
 import { resolveImages } from "./format/image-resolver.js";
 import { createStreamingCard } from "./streaming.js";
-import type { CompleteOptions } from "./streaming.js";
 import { CardKitController } from "./cardkit.js";
 import { TaskPanelController } from "./task-panel.js";
 
@@ -392,7 +390,7 @@ export async function runAgent(
         // 构建元数据（一次性构建，避免可变拼接）
         const metadata = buildFooterMetadata(elapsedSeconds, model, tokens, imageFailedCount);
 
-        const completeOptions: CompleteOptions = {
+        const completeOptions: CompletionOptions = {
           metadata,
           thinking,
           reasoningElapsedMs,
@@ -437,12 +435,4 @@ export async function runAgent(
   }
 
   return "completed";
-}
-
-export function ensureEnv(): void {
-  if (!process.env.HOME) process.env.HOME = os.homedir();
-  try {
-    const shellPath = execSync("bash -lc 'echo $PATH' 2>/dev/null", { timeout: 3000 }).toString().trim();
-    if (shellPath) process.env.PATH = shellPath;
-  } catch {}
 }

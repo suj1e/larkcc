@@ -24,8 +24,8 @@ import { stripThinking } from "./format/thinking.js";
 import { buildThinkingPanel, THINKING_OVERFLOW_TRUNCATE, formatDuration } from "./format/duration.js";
 import { buildHeader, buildFooterMarkdown } from "./format/card.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
-import type { ReplyContext } from "./feishu.js";
-import type { CompleteOptions, FlushControllerOptions } from "./streaming.js";
+import type { ReplyContext, CompletionOptions } from "./feishu.js";
+import type { FlushControllerOptions } from "./streaming.js";
 import { FlushController } from "./streaming.js";
 import { countTables } from "./format/index.js";
 
@@ -183,7 +183,7 @@ export class CardKitController {
   /**
    * 完成：关闭 streaming_mode，写入最终内容
    */
-  async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
+  async complete(finalContent: string, options?: CompletionOptions): Promise<void> {
     if (this.phase === "completed") return;
 
     this.flushCtrl.stop();
@@ -457,7 +457,7 @@ export class CardKitController {
    */
   private async handleOverflow(
     rawContent: string,
-    options?: CompleteOptions,
+    options?: CompletionOptions,
   ): Promise<void> {
     try {
       // 先更新卡片显示"正在生成文档..."
@@ -545,7 +545,7 @@ export class CardKitController {
   /**
    * 构建最终卡片 JSON
    */
-  private buildFinalCard(content: string, extraElements?: any[], stats?: CompleteOptions['stats']): any {
+  private buildFinalCard(content: string, extraElements?: any[], stats?: CompletionOptions['stats']): any {
     const elements: any[] = [
       ...(extraElements ?? []),
       {

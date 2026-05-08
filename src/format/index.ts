@@ -12,7 +12,7 @@ export type { SanitizeResult } from "./sanitize.js";
 
 // 卡片处理
 export {
-  buildMarkdownCard,
+  buildSimpleCard,
   sendMarkdownCardMessage,
 } from "./card.js";
 

@@ -12,9 +12,8 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import type { StreamingConfig } from "./config.js";
-import type { ReplyContext } from "./feishu.js";
+import type { ReplyContext, CompletionOptions, CardBuildOptions } from "./feishu.js";
 import { replyFinalCard, buildMarkdownCard } from "./feishu.js";
-import type { CardBuildOptions } from "./feishu.js";
 
 // ── FlushController：互斥守卫 + 自适应节流 + 长间隔批处理 ───────────
 
@@ -158,30 +157,12 @@ export class FlushController {
 
 // ── 流式卡片接口 ──────────────────────────────────────────────
 
-export interface CompleteOptions {
-  /** 底部元数据（耗时、token 等） */
-  metadata?: string;
-  /** 思考内容，显示在可折叠区域 */
-  thinking?: string;
-  /** 思考耗时（毫秒） */
-  reasoningElapsedMs?: number;
-  /** 卡片标题 */
-  cardTitle?: string;
-  /** 结构化统计数据（CardKit 模式使用） */
-  stats?: {
-    model?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    duration?: number;
-    toolCount?: number;
-  };
-  /** Header 自定义图标 */
-  headerIconImgKey?: string;
-}
+/** @deprecated Import CompletionOptions from "./feishu.js" instead */
+export type CompleteOptions = CompletionOptions;
 
 export interface IStreamingCard {
   append(text: string): Promise<void>;
-  complete(finalContent: string, options?: CompleteOptions): Promise<void>;
+  complete(finalContent: string, options?: CompletionOptions): Promise<void>;
   abort(options?: { content?: string; thinking?: string; reasoningElapsedMs?: number }): Promise<void>;
   isDisabled(): boolean;
 }
@@ -308,7 +289,7 @@ class UpdateStreamingCard implements IStreamingCard {
     });
   }
 
-  async complete(finalContent: string, options?: CompleteOptions): Promise<void> {
+  async complete(finalContent: string, options?: CompletionOptions): Promise<void> {
     this.flushCtrl.stop();
 
     if (this._disabled || !this.msgId) {

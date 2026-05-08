@@ -333,57 +333,26 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
     raw.profiles[profile] = { feishu };
   }
 
-  if (!raw.claude) {
-    raw.claude = {
-      permission_mode: "acceptEdits",
-      allowed_tools: DEFAULT_TOOLS,
-    };
-  }
+  const SEED_DEFAULTS: Record<string, any> = {
+    claude: { permission_mode: "acceptEdits", allowed_tools: DEFAULT_TOOLS },
+    overflow: DEFAULT_OVERFLOW,
+    image_prompt: DEFAULT_IMAGE_PROMPT,
+    file: DEFAULT_FILE_CONFIG,
+    reaction: DEFAULT_REACTION,
+    card_title: DEFAULT_CARD_TITLE,
+    streaming: DEFAULT_STREAMING,
+    image_resolver: DEFAULT_IMAGE_RESOLVER,
+    format_guide: DEFAULT_FORMAT_GUIDE,
+  };
 
-  // 添加默认 overflow 配置（首次创建时）
-  if (!raw.overflow) {
-    raw.overflow = DEFAULT_OVERFLOW;
-  }
-
-  // 添加默认 image_prompt 配置（首次创建时）
-  if (!raw.image_prompt) {
-    raw.image_prompt = DEFAULT_IMAGE_PROMPT;
-  }
-
-  // 添加默认 file 配置（首次创建时）
-  if (!raw.file) {
-    raw.file = DEFAULT_FILE_CONFIG;
+  for (const [key, value] of Object.entries(SEED_DEFAULTS)) {
+    if (!raw[key]) raw[key] = value;
   }
 
   // 确保 cleanup 配置存在（兼容旧配置）
   if (!raw.overflow.document?.cleanup) {
     raw.overflow.document = raw.overflow.document || {};
     raw.overflow.document.cleanup = DEFAULT_OVERFLOW.document.cleanup;
-  }
-
-  // 添加默认 reaction 配置（首次创建时）
-  if (!raw.reaction) {
-    raw.reaction = DEFAULT_REACTION;
-  }
-
-  // 添加默认 card_title 配置（首次创建时）
-  if (!raw.card_title) {
-    raw.card_title = DEFAULT_CARD_TITLE;
-  }
-
-  // 添加默认 streaming 配置（首次创建时）
-  if (!raw.streaming) {
-    raw.streaming = DEFAULT_STREAMING;
-  }
-
-  // 添加默认 image_resolver 配置（首次创建时）
-  if (!raw.image_resolver) {
-    raw.image_resolver = DEFAULT_IMAGE_RESOLVER;
-  }
-
-  // 添加默认 format_guide 配置（首次创建时）
-  if (!raw.format_guide) {
-    raw.format_guide = DEFAULT_FORMAT_GUIDE;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
