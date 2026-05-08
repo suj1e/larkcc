@@ -1,28 +1,8 @@
 import { execSync } from "child_process";
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import yaml from "js-yaml";
+import { DEFAULT_PROMPTS } from "./commands/default-prompts.js";
 import { logger } from "./logger.js";
 import type { ExecSecurity } from "./config.js";
-
-// 获取当前文件目录
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// 加载内置 PROMPT 默认值
-function loadDefaultPrompts(): Record<string, string> {
-  const ymlPath = path.join(__dirname, "commands", "default-prompts.yml");
-  try {
-    const content = fs.readFileSync(ymlPath, "utf8");
-    return yaml.load(content) as Record<string, string>;
-  } catch {
-    logger.warn("Failed to load default-prompts.yml");
-    return {};
-  }
-}
-
-const DEFAULT_PROMPTS = loadDefaultPrompts();
 
 function detectPkgManager(cwd: string): string {
   if (fs.existsSync(`${cwd}/pnpm-lock.yaml`)) return "pnpm";

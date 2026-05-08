@@ -38,9 +38,6 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Set executable permission
-        run: chmod +x bin/larkcc
-
       - name: Publish to npm
         id: publish
         run: npm publish --access public
