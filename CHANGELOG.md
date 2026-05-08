@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-09
+
+### Changed
+
+- **Build system: migrate from `tsc` to `tsup`** — output a single self-contained `dist/index.js` (all dependencies bundled)
+- Convert `default-prompts.yml` → `default-prompts.ts` (typed object export, no runtime file reading)
+- Convert `format-guide.md` → `default-guide.ts` (string export, eliminates `__dirname` resource resolution)
+- Simplify `tsconfig.json` to typecheck-only (`noEmit`), build responsibility fully on tsup
+- Move all `dependencies` to `devDependencies` (bundled by tsup at build time)
+- Update CI: add `typecheck` step, remove `chmod +x bin/larkcc` from release workflow
+
+### Removed
+
+- `bin/larkcc` entry wrapper (tsup output has shebang, `bin` points directly at `dist/index.js`)
+- `install.sh` and `release.sh` (use `npm i -g larkcc` / `npm version` + CI auto-publish)
+- `resources/format-guide.md` and `src/commands/default-prompts.yml` (inlined into source)
+
 ## [0.11.1] - 2026-04-29
 
 ### Fixed
