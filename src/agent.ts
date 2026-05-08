@@ -211,6 +211,7 @@ export async function runAgent(
         resume: sessionId,
         permissionMode: config.claude.permission_mode as "acceptEdits",
         allowedTools: config.claude.allowed_tools,
+        thinking: config.claude.thinking,
         abortController,
         agentProgressSummaries: true,
         pathToClaudeCodeExecutable: execSync("which claude 2>/dev/null || echo ''", { encoding: "utf8" }).trim() || undefined,

@@ -99,6 +99,43 @@ export function buildMarkdownCard(markdown: string, warnings: string[] = []): ob
 }
 
 /**
+ * 构建状态通知卡片（连接/断开等）
+ */
+export function buildStatusCard(options: {
+  title?: string;
+  bodyLines: string[];
+  template?: string;
+  tags?: Array<{ text: string; color: string }>;
+  footer?: string;
+}): object {
+  const header = buildHeader({
+    title: options.title ?? "larkcc",
+    template: options.template ?? "blue",
+    tags: options.tags,
+  });
+
+  const elements: any[] = [
+    { tag: "markdown", content: options.bodyLines.join("\n") },
+  ];
+
+  if (options.footer) {
+    elements.push({ tag: "hr" });
+    elements.push({
+      tag: "markdown",
+      content: `<font color='grey'>${options.footer}</font>`,
+      text_size: "notation",
+    });
+  }
+
+  return {
+    schema: "2.0",
+    config: { wide_screen_mode: true },
+    header,
+    body: { elements },
+  };
+}
+
+/**
  * 构建并发送 Markdown 卡片消息
  * 这是一个辅助函数，用于统一处理卡片消息的发送
  */

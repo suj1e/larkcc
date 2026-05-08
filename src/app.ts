@@ -8,9 +8,11 @@ import { execSync } from "child_process";
 import { createLarkClient, createWSClient, sendText, downloadImage, downloadFile, DownloadedFile } from "./feishu.js";
 import { runAgent, ensureEnv, ImageInput } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
+import { buildStatusCard } from "./format/card.js";
 import { parseCommand, CommandContext, runCmd } from "./commands.js";
 import { getSession, setSession, getChatId, saveChatId } from "./session.js";
 import { logger } from "./logger.js";
+import { VERSION } from "./version.js";
 import * as multifile from "./multifile.js";
 
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
@@ -732,8 +734,33 @@ export async function startApp(
   logger.dim("Press Ctrl+C to stop\n");
 
   if (knownChatId) {
-    const sessionNote = continueSession ? "（续接上次对话）" : "（新会话）";
-    await sendText(client, knownChatId, `✅ larkcc 已连接${profileLabel} ${sessionNote}\n📁 当前项目：\`${cwd}\``);
+    const sessionNote = continueSession ? "续接上次对话" : "新会话";
+    const tags: Array<{ text: string; color: string }> = [];
+    if (profileLabel) tags.push({ text: profileLabel, color: "purple" });
+    tags.push({ text: sessionNote, color: "turquoise" });
+    const card = buildStatusCard({
+      title: "larkcc",
+      bodyLines: [
+        "**已上线** — 随时可以对话",
+        "",
+        `📁 \`${cwd}\``,
+      ],
+      template: "green",
+      tags,
+      footer: `v${VERSION}`,
+    });
+    try {
+      await client.im.message.create({
+        params: { receive_id_type: "chat_id" },
+        data: {
+          receive_id: knownChatId,
+          msg_type: "interactive",
+          content: JSON.stringify(card),
+        },
+      });
+    } catch (e) {
+      logger.warn(`Startup notification failed: ${e}`);
+    }
   } else {
     logger.dim("No chat_id yet — send any message to the bot first");
   }
@@ -744,7 +771,27 @@ export async function startApp(
     clearLock(profile);
     if (knownChatId) {
       try {
-        await sendText(client, knownChatId, `👋 larkcc 已断开${profileLabel}\n📁 项目：\`${cwd}\``);
+        const tags: Array<{ text: string; color: string }> = [];
+        if (profileLabel) tags.push({ text: profileLabel, color: "purple" });
+        const card = buildStatusCard({
+          title: "larkcc",
+          bodyLines: [
+            "**已离线**",
+            "",
+            `📁 \`${cwd}\``,
+          ],
+          template: "red",
+          tags,
+          footer: `v${VERSION}`,
+        });
+        await client.im.message.create({
+          params: { receive_id_type: "chat_id" },
+          data: {
+            receive_id: knownChatId,
+            msg_type: "interactive",
+            content: JSON.stringify(card),
+          },
+        });
       } catch {}
     }
     process.exit(0);

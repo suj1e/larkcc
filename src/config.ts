@@ -76,6 +76,7 @@ export interface ProfileConfig {
   claude: {
     permission_mode?: "acceptEdits" | "auto" | "default";
     allowed_tools?: string[];
+    thinking?: { type: "adaptive" } | { type: "enabled"; budgetTokens: number } | { type: "disabled" };
   };
   overflow?: OverflowConfig;
   format_guide?: FormatGuideConfig;  // 格式指导配置
@@ -254,6 +255,7 @@ export function loadConfig(cwd: string, profile?: string): LarkccConfig {
     claude: {
       permission_mode: claude.permission_mode ?? "acceptEdits",
       allowed_tools: claude.allowed_tools ?? DEFAULT_TOOLS,
+      thinking: claude.thinking ?? { type: "adaptive" },
     },
     overflow: {
       mode: overflow.mode ?? DEFAULT_OVERFLOW.mode,
