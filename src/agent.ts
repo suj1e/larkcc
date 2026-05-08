@@ -233,6 +233,7 @@ export async function runAgent(
       for (const block of blocks) {
         if (block.type === "thinking" && block.text) {
           thinkingBuffer += block.text;
+          logger.info(`[thinking] received ${block.text.length} chars (total: ${thinkingBuffer.length})`);
           if (!reasoningStartTime) {
             reasoningStartTime = Date.now();
             if (isCardkitMode) await cardkitCtrl?.updateStatus("💭 思考中...");
@@ -365,6 +366,11 @@ export async function runAgent(
         if (thinkingEnabled) {
           finalContent = textBuffer;
           thinking = thinkingBuffer || undefined;
+          if (thinking) {
+            logger.success(`[thinking] final: ${thinking.length} chars, ${reasoningElapsedMs ? (reasoningElapsedMs / 1000).toFixed(1) + 's' : 'no timing'}`);
+          } else {
+            logger.dim("[thinking] no thinking blocks received from SDK");
+          }
         } else {
           finalContent = stripThinking(textBuffer);
         }
