@@ -208,8 +208,12 @@ function ensureClaudeOnboarding(): void {
   } catch (err) { logger.warn(`Failed to write ~/.claude.json: ${String(err)}`); }
 }
 
+const IS_WIN = process.platform === "win32";
+const PATH_SEP = IS_WIN ? ";" : ":";
+
 function ensureEnv(): void {
   if (!process.env.HOME) process.env.HOME = os.homedir();
+  if (IS_WIN) return;
   try {
     const shellPath = execSync("bash -lc 'echo $PATH' 2>/dev/null", { timeout: 3000 }).toString().trim();
     if (shellPath) process.env.PATH = shellPath;
@@ -217,27 +221,40 @@ function ensureEnv(): void {
 }
 
 function ensureClaudeInPath(): void {
-  const commonPaths = [
-    "/usr/local/bin", "/usr/bin",
-    `${os.homedir()}/.npm-global/bin`, `${os.homedir()}/.local/bin`,
-    "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
-  ];
+  const commonPaths = IS_WIN
+    ? [
+        path.join(process.env.APPDATA ?? "", "npm"),
+        path.join(process.env.LOCALAPPDATA ?? "", "Programs", "claude"),
+      ]
+    : [
+        "/usr/local/bin", "/usr/bin",
+        `${os.homedir()}/.npm-global/bin`, `${os.homedir()}/.local/bin`,
+        "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
+      ];
+
+  const findCmd = IS_WIN ? "where claude 2>nul" : "which claude 2>/dev/null || command -v claude 2>/dev/null";
+  const shellOpt = IS_WIN ? {} : { shell: "/bin/bash" };
+
   try {
-    const claudePath = execSync("which claude 2>/dev/null || command -v claude 2>/dev/null", {
-      shell: "/bin/bash",
-      env: { ...process.env, PATH: [...commonPaths, process.env.PATH ?? ""].join(":") },
-    }).toString().trim();
+    const claudePath = execSync(findCmd, {
+      ...shellOpt,
+      encoding: "utf8",
+      timeout: 5000,
+      env: { ...process.env, PATH: [...commonPaths, process.env.PATH ?? ""].join(PATH_SEP) },
+    }).trim();
     if (claudePath) {
-      const dir = path.dirname(claudePath);
-      if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}:${process.env.PATH}`;
-      logger.dim(`claude found: ${claudePath}`);
+      const resolved = claudePath.split(/[\r\n]/)[0];
+      const dir = path.dirname(resolved);
+      if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}${PATH_SEP}${process.env.PATH}`;
+      logger.dim(`claude found: ${resolved}`);
       return;
     }
   } catch {}
   for (const dir of commonPaths) {
-    if (fs.existsSync(path.join(dir, "claude"))) {
-      if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}:${process.env.PATH}`;
-      logger.dim(`claude found: ${dir}/claude`);
+    const binName = IS_WIN ? "claude.cmd" : "claude";
+    if (fs.existsSync(path.join(dir, binName)) || fs.existsSync(path.join(dir, "claude"))) {
+      if (!process.env.PATH?.includes(dir)) process.env.PATH = `${dir}${PATH_SEP}${process.env.PATH}`;
+      logger.dim(`claude found: ${dir}`);
       return;
     }
   }

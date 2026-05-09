@@ -34,6 +34,15 @@ const TOOL_LABELS: Record<string, string> = {
 
 const SILENT_TOOLS = new Set(["ExitPlanMode", "TodoWrite", "TodoRead"]);
 
+function findClaudeBinary(): string | undefined {
+  const cmd = process.platform === "win32" ? "where claude 2>nul" : "which claude 2>/dev/null || command -v claude 2>/dev/null";
+  try {
+    const result = execSync(cmd, { encoding: "utf8", timeout: 5000 }).trim();
+    if (result) return result.split(/[\r\n]/)[0];
+  } catch {}
+  return undefined;
+}
+
 function formatInput(name: string, input: Record<string, unknown>): string {
   if (["Read", "Write", "Edit"].includes(name))
     return String(input.file_path ?? input.path ?? "");
@@ -210,7 +219,7 @@ export async function runAgent(
         thinking: config.claude.thinking,
         abortController,
         agentProgressSummaries: true,
-        pathToClaudeCodeExecutable: execSync("which claude 2>/dev/null || echo ''", { encoding: "utf8" }).trim() || undefined,
+        pathToClaudeCodeExecutable: config.claude.path || findClaudeBinary(),
         ...(systemPrompt ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: systemPrompt } } : {}),
       },
     })) {
