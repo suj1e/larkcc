@@ -10,6 +10,7 @@
 
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
+import { STREAMING_TRUNCATE } from "./format/duration.js";
 import { parseThinking, stripThinking } from "./format/thinking.js";
 import type { StreamingConfig } from "./config.js";
 import type { ReplyContext, CompletionOptions, CardBuildOptions } from "./feishu.js";
@@ -20,7 +21,7 @@ import { replyFinalCard, buildMarkdownCard } from "./feishu.js";
 const LONG_GAP_MS = 2000;   // 2 秒无新内容，强制刷新
 const GAP_CHECK_INTERVAL = 500; // 每 500ms 检查一次长间隔
 const HEARTBEAT_MS = 15000;  // 15 秒无 flush，发送心跳防止 CardKit 流式超时
-const TRUNCATE_LIMIT = 4000;
+const TRUNCATE_LIMIT = STREAMING_TRUNCATE;
 
 export interface FlushControllerOptions {
   /** 最小刷新间隔（毫秒） */

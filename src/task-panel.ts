@@ -18,6 +18,7 @@ interface TaskState {
   lastToolName?: string;
   startTime: number;
   tokens?: number;
+  toolsUsed: string[];
 }
 
 export interface TaskPanelControllerOptions {
@@ -61,6 +62,7 @@ export class TaskPanelController {
         description: event.description,
         status: "running",
         startTime: Date.now(),
+        toolsUsed: [],
       });
       logger.dim(`[task-panel] started: ${event.description.slice(0, 40)}`);
     } catch (err) {
@@ -81,7 +83,12 @@ export class TaskPanelController {
 
     // 更新本地状态
     if (event.summary) task.summary = event.summary;
-    if (event.last_tool_name) task.lastToolName = event.last_tool_name;
+    if (event.last_tool_name) {
+      task.lastToolName = event.last_tool_name;
+      if (task.toolsUsed[task.toolsUsed.length - 1] !== event.last_tool_name) {
+        task.toolsUsed.push(event.last_tool_name);
+      }
+    }
     if (event.usage) {
       task.tokens = event.usage.total_tokens;
     }
@@ -92,6 +99,7 @@ export class TaskPanelController {
         status: "running",
         summary: task.summary,
         lastToolName: task.lastToolName,
+        toolsUsed: task.toolsUsed,
         elapsedSeconds: (Date.now() - task.startTime) / 1000,
         tokens: task.tokens,
         headerIconImgKey: this.headerIconImgKey,
@@ -124,6 +132,7 @@ export class TaskPanelController {
         description: task.description,
         status: event.status,
         summary: event.summary,
+        toolsUsed: task.toolsUsed,
         elapsedSeconds,
         tokens: task.tokens,
         headerIconImgKey: this.headerIconImgKey,
@@ -144,6 +153,7 @@ export class TaskPanelController {
           description: task.description,
           status: "stopped",
           summary: task.summary ?? "Aborted",
+          toolsUsed: task.toolsUsed,
           elapsedSeconds: (Date.now() - task.startTime) / 1000,
           tokens: task.tokens,
         });
@@ -163,6 +173,7 @@ export class TaskPanelController {
           description: task.description,
           status: "completed",
           summary: task.summary ?? "Done",
+          toolsUsed: task.toolsUsed,
           elapsedSeconds: (Date.now() - task.startTime) / 1000,
           tokens: task.tokens,
         });

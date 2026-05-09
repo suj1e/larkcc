@@ -15,6 +15,12 @@ export const THINKING_OVERFLOW_TRUNCATE = 3000;
 /** 工具结果截断阈值（字符数） */
 export const TOOL_RESULT_TRUNCATE = 2000;
 
+/** 流式内容截断阈值（字符数） */
+export const STREAMING_TRUNCATE = 4000;
+
+/** 任务面板 summary 截断阈值（字符数） */
+export const TASK_SUMMARY_TRUNCATE = 3000;
+
 // ── 时间格式化 ─────────────────────────────────────────────
 
 /** 秒 → "3.2s" / "1m 23s" */

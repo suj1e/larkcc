@@ -1,4 +1,6 @@
 import * as lark from "@larksuiteoapi/node-sdk";
+import { buildHeader } from "../format/card.js";
+import { TASK_SUMMARY_TRUNCATE } from "../format/duration.js";
 
 // ── 任务面板卡片 ─────────────────────────────────────────────
 
@@ -9,6 +11,7 @@ export interface TaskPanelCardOptions {
   status: TaskPanelStatus;
   summary?: string;
   lastToolName?: string;
+  toolsUsed?: string[];
   elapsedSeconds?: number;
   tokens?: number;
   headerIconImgKey?: string;
@@ -21,70 +24,83 @@ const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; la
   stopped:  { color: "grey",     icon: "⏹",  label: "Stopped" },
 };
 
+const TOOL_DISPLAY: Record<string, string> = {
+  Read: "📂 Read", Write: "📝 Write", Edit: "✏️ Edit",
+  Bash: "⚡ Bash", Glob: "📂 Glob", Grep: "🔍 Grep",
+  LS: "📁 LS",
+};
+
 function fmtDur(sec: number): string {
   return sec < 60
     ? `${sec.toFixed(0)}s`
     : `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
 }
 
+function formatToolSequence(toolsUsed: string[], isTerminal: boolean): string {
+  if (toolsUsed.length === 0) return "";
+
+  if (!isTerminal) {
+    return toolsUsed.map(t => TOOL_DISPLAY[t] ?? `🔧 ${t}`).join(" → ");
+  }
+
+  // Terminal state: merge consecutive duplicates with counts
+  const merged: string[] = [];
+  let current = toolsUsed[0];
+  let count = 1;
+  for (let i = 1; i < toolsUsed.length; i++) {
+    if (toolsUsed[i] === current) {
+      count++;
+    } else {
+      const label = TOOL_DISPLAY[current] ?? `🔧 ${current}`;
+      merged.push(count > 1 ? `${label} ×${count}` : label);
+      current = toolsUsed[i];
+      count = 1;
+    }
+  }
+  const lastLabel = TOOL_DISPLAY[current] ?? `🔧 ${current}`;
+  merged.push(count > 1 ? `${lastLabel} ×${count}` : lastLabel);
+  return merged.join(" → ");
+}
+
 function buildTaskPanelCard(options: TaskPanelCardOptions) {
-  const { description, status, summary, lastToolName, elapsedSeconds, tokens, headerIconImgKey } = options;
+  const { description, status, summary, lastToolName, toolsUsed, elapsedSeconds, tokens, headerIconImgKey } = options;
   const st = STATUS_TEMPLATE[status];
+  const isTerminal = status !== "running";
 
   const elements: any[] = [];
 
+  // Status line
   const statusParts: string[] = [`**${st.icon} ${st.label}**`];
-  if (lastToolName && status === "running") statusParts.push(`Tool: \`${lastToolName}\``);
+  if (lastToolName && status === "running") statusParts.push(`\`${lastToolName}\``);
   elements.push({ tag: "markdown", content: statusParts.join(" · ") });
 
-  const hasContent = summary && summary !== "Done" && summary !== "Aborted";
-  if (hasContent) {
-    elements.push({ tag: "markdown", content: summary!.length > 3000 ? summary!.slice(0, 3000) + "..." : summary });
+  // Tool sequence
+  if (toolsUsed && toolsUsed.length > 0) {
+    elements.push({ tag: "markdown", content: formatToolSequence(toolsUsed, isTerminal), text_size: "notation" });
+  }
+
+  // Summary
+  if (summary && summary !== "Done" && summary !== "Aborted") {
+    elements.push({ tag: "markdown", content: summary.length > TASK_SUMMARY_TRUNCATE ? summary.slice(0, TASK_SUMMARY_TRUNCATE) + "..." : summary });
   } else if (status === "running") {
     elements.push({ tag: "markdown", content: "Processing..." });
   }
 
-  const footerColumns: any[] = [];
-  if (elapsedSeconds != null) {
-    footerColumns.push({
-      tag: "column",
-      width: "weighted",
-      weight: 1,
-      vertical_align: "center",
-      elements: [{ tag: "markdown", content: `<font color='grey'>⏱ ${fmtDur(elapsedSeconds)}</font>`, text_size: "notation" }],
-    });
-  }
-  if (status !== "running" && tokens != null) {
-    footerColumns.push({
-      tag: "column",
-      width: "weighted",
-      weight: 1,
-      vertical_align: "center",
-      elements: [{ tag: "markdown", content: `<font color='grey'>🪙 ${tokens.toLocaleString()} tokens</font>`, text_size: "notation" }],
-    });
-  }
-  if (footerColumns.length > 0) {
-    elements.push({
-      tag: "column_set",
-      flex_mode: "none",
-      background_style: "default",
-      columns: footerColumns,
-    });
-  }
-
-  const icon = headerIconImgKey
-    ? { tag: "custom_icon", img_key: headerIconImgKey }
-    : { tag: "standard_icon", token: "larkcommunity_colorful" };
+  // Header tags (replaces footer — avoids duplication)
+  const tags: Array<{ text: string; color: string }> = [];
+  if (elapsedSeconds != null) tags.push({ text: fmtDur(elapsedSeconds), color: "turquoise" });
+  if (isTerminal && tokens != null) tags.push({ text: `${tokens.toLocaleString()} tokens`, color: "blue" });
 
   return {
     schema: "2.0",
     config: { wide_screen_mode: true },
-    header: {
-      title: { tag: "plain_text", content: "🤖 Sub Agent" },
-      subtitle: { tag: "plain_text", content: description },
+    header: buildHeader({
+      title: description,
+      subtitle: "🤖 Sub Agent",
       template: st.color,
-      icon,
-    },
+      iconImgKey: headerIconImgKey,
+      tags,
+    }),
     body: { elements },
   };
 }

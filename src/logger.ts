@@ -1,6 +1,6 @@
 import chalk from "chalk";
 
-const ts = () => chalk.gray(new Date().toLocaleTimeString());
+const ts = () => chalk.blue(new Date().toLocaleTimeString());
 
 export const logger = {
   info: (msg: string) => console.log(`${ts()} ${chalk.cyan("ℹ")} ${msg}`),

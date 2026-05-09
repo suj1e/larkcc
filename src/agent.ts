@@ -13,7 +13,8 @@ import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
 import { getFormatGuideContent } from "./format/guide.js";
 import { stripThinking } from "./format/thinking.js";
-import { formatDuration } from "./format/duration.js";
+import { formatDuration, TOOL_RESULT_TRUNCATE } from "./format/duration.js";
+import { truncateSafely } from "./format/card-optimize.js";
 import { resolveImages } from "./format/image-resolver.js";
 import { createStreamingCard } from "./streaming.js";
 import { CardKitController } from "./cardkit.js";
@@ -41,10 +42,6 @@ function formatInput(name: string, input: Record<string, unknown>): string {
   if (name === "LS")   return String(input.path ?? ".");
   if (name === "Glob") return String(input.pattern ?? "");
   return JSON.stringify(input).slice(0, 100);
-}
-
-function truncate(str: string, len: number): string {
-  return str.length > len ? str.slice(0, len) + "..." : str;
 }
 
 /**
@@ -290,7 +287,7 @@ export async function runAgent(
               ? block.content
               : JSON.stringify(block.content ?? "");
             const toolEntry = cardkitToolResults.find(t => t.id === block.tool_use_id);
-            if (toolEntry) toolEntry.resultPreview = truncate(raw, 500);
+            if (toolEntry) toolEntry.resultPreview = raw;
             break;
           }
           const toolInfo = toolMsgMap.get(block.tool_use_id);
@@ -298,7 +295,7 @@ export async function runAgent(
             const raw = typeof block.content === "string"
               ? block.content
               : JSON.stringify(block.content ?? "");
-            await updateToolCard(client, toolInfo.msgId, toolInfo.label, toolInfo.detail, truncate(raw, 500));
+            await updateToolCard(client, toolInfo.msgId, toolInfo.label, toolInfo.detail, raw.length > TOOL_RESULT_TRUNCATE ? truncateSafely(raw, TOOL_RESULT_TRUNCATE) : raw);
           }
         }
       }

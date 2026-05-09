@@ -21,7 +21,7 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
-import { buildThinkingPanel, buildToolPanels, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
+import { buildThinkingPanel, buildToolPanels, STREAMING_TRUNCATE } from "./format/duration.js";
 import { buildHeader, buildFooterElement, buildStatsTags } from "./format/card.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
 import type { ReplyContext, CompletionOptions } from "./feishu.js";
@@ -31,7 +31,7 @@ import { countTables } from "./format/index.js";
 
 // ── 常量 ──────────────────────────────────────────────────
 
-const TRUNCATE_LIMIT = 4000;
+const TRUNCATE_LIMIT = STREAMING_TRUNCATE;
 
 // ── 状态机 ──────────────────────────────────────────────────
 
