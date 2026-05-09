@@ -21,8 +21,8 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
 import { stripThinking } from "./format/thinking.js";
-import { buildThinkingPanel, buildToolPanels, THINKING_OVERFLOW_TRUNCATE, formatDuration } from "./format/duration.js";
-import { buildHeader, buildFooterMarkdown } from "./format/card.js";
+import { buildThinkingPanel, buildToolPanels, THINKING_OVERFLOW_TRUNCATE } from "./format/duration.js";
+import { buildHeader, buildFooterElement, buildStatsTags } from "./format/card.js";
 import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
 import type { ReplyContext, CompletionOptions } from "./feishu.js";
 import type { FlushControllerOptions } from "./streaming.js";
@@ -561,14 +561,13 @@ export class CardKitController {
       },
     ];
 
-    const footer = buildFooterMarkdown({
+    const footer = buildFooterElement({
       inputTokens: stats?.inputTokens,
       outputTokens: stats?.outputTokens,
       toolCount: stats?.toolCount,
-      duration: stats?.duration,
     });
     if (footer) {
-      elements.push({ tag: "hr" }, { tag: "markdown", content: footer, text_size: "notation" });
+      elements.push({ tag: "hr" }, footer);
     }
 
     const cardJson: any = {
@@ -581,24 +580,12 @@ export class CardKitController {
     };
 
     if (this.cardTitle) {
-      const tags: Array<{ text: string; color: string }> = [];
-      if (stats?.model) {
-        tags.push({ text: stats.model, color: "blue" });
-      }
-      const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
-      if (totalTokens > 0) {
-        tags.push({ text: `${totalTokens.toLocaleString()} tokens`, color: "turquoise" });
-      }
-      if (stats?.duration != null) {
-        tags.push({ text: formatDuration(stats.duration), color: "orange" });
-      }
-
       cardJson.header = buildHeader({
         title: this.cardTitle,
         subtitle: "对话完成",
         template: "green",
         iconImgKey: this.headerIconImgKey,
-        tags,
+        tags: buildStatsTags(stats ?? {}),
       });
     }
 

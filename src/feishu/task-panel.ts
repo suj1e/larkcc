@@ -44,11 +44,32 @@ function buildTaskPanelCard(options: TaskPanelCardOptions) {
     elements.push({ tag: "markdown", content: "Processing..." });
   }
 
-  const footerParts: string[] = [];
-  if (elapsedSeconds != null) footerParts.push(`⏱ ${fmtDur(elapsedSeconds)}`);
-  if (status !== "running" && tokens != null) footerParts.push(`🪙 ${tokens.toLocaleString()} tokens`);
-  if (footerParts.length > 0) {
-    elements.push({ tag: "markdown", content: `<font color='grey'>${footerParts.join(" · ")}</font>` });
+  const footerColumns: any[] = [];
+  if (elapsedSeconds != null) {
+    footerColumns.push({
+      tag: "column",
+      width: "weighted",
+      weight: 1,
+      vertical_align: "center",
+      elements: [{ tag: "markdown", content: `<font color='grey'>⏱ ${fmtDur(elapsedSeconds)}</font>`, text_size: "notation" }],
+    });
+  }
+  if (status !== "running" && tokens != null) {
+    footerColumns.push({
+      tag: "column",
+      width: "weighted",
+      weight: 1,
+      vertical_align: "center",
+      elements: [{ tag: "markdown", content: `<font color='grey'>🪙 ${tokens.toLocaleString()} tokens</font>`, text_size: "notation" }],
+    });
+  }
+  if (footerColumns.length > 0) {
+    elements.push({
+      tag: "column_set",
+      flex_mode: "none",
+      background_style: "default",
+      columns: footerColumns,
+    });
   }
 
   const icon = headerIconImgKey

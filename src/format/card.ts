@@ -49,31 +49,71 @@ export function buildHeader(options: HeaderOptions): any {
   return header;
 }
 
+// ── Stats Tags 构建器 ───────────────────────────────────────
+
+export interface StatsInfo {
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  duration?: number;
+}
+
+export function buildStatsTags(stats: StatsInfo): Array<{ text: string; color: string }> {
+  const tags: Array<{ text: string; color: string }> = [];
+  if (stats.model) tags.push({ text: stats.model, color: "blue" });
+  const totalTokens = (stats.inputTokens ?? 0) + (stats.outputTokens ?? 0);
+  if (totalTokens > 0) tags.push({ text: `${totalTokens.toLocaleString()} tokens`, color: "turquoise" });
+  if (stats.duration != null) tags.push({ text: formatDuration(stats.duration), color: "orange" });
+  return tags;
+}
+
 // ── Footer 构建器 ──────────────────────────────────────────
 
 export interface FooterStats {
   inputTokens?: number;
   outputTokens?: number;
   toolCount?: number;
-  duration?: number;
 }
 
-export function buildFooterMarkdown(stats: FooterStats): string | null {
-  const parts: string[] = [];
+export function buildFooterElement(stats: FooterStats): any | null {
+  const columns: any[] = [];
 
   if (stats.inputTokens != null) {
-    parts.push(`📥 ${stats.inputTokens.toLocaleString()}`);
+    columns.push({
+      tag: "column",
+      width: "weighted",
+      weight: 1,
+      vertical_align: "center",
+      elements: [{ tag: "markdown", content: `<font color='grey'>📥 ${stats.inputTokens.toLocaleString()}</font>`, text_size: "notation" }],
+    });
   }
   if (stats.outputTokens != null) {
-    parts.push(`📤 ${stats.outputTokens.toLocaleString()}`);
+    columns.push({
+      tag: "column",
+      width: "weighted",
+      weight: 1,
+      vertical_align: "center",
+      elements: [{ tag: "markdown", content: `<font color='grey'>📤 ${stats.outputTokens.toLocaleString()}</font>`, text_size: "notation" }],
+    });
   }
   if (stats.toolCount != null && stats.toolCount > 0) {
-    parts.push(`🔧 ${stats.toolCount}`);
+    columns.push({
+      tag: "column",
+      width: "weighted",
+      weight: 1,
+      vertical_align: "center",
+      elements: [{ tag: "markdown", content: `<font color='grey'>🔧 ${stats.toolCount}</font>`, text_size: "notation" }],
+    });
   }
 
-  if (parts.length === 0) return null;
+  if (columns.length === 0) return null;
 
-  return `<font color='grey'>${parts.join(" · ")}</font>`;
+  return {
+    tag: "column_set",
+    flex_mode: "none",
+    background_style: "default",
+    columns,
+  };
 }
 
 /**

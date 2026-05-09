@@ -2,8 +2,7 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import { OverflowConfig, CardTableConfig } from "../config.js";
 import { sanitizeContent, formatWarnings, countTables, optimizeForCard } from "../format/index.js";
 import { buildThinkingPanel } from "../format/duration.js";
-import { buildHeader, buildFooterMarkdown } from "../format/card.js";
-import { formatDuration } from "../format/duration.js";
+import { buildHeader, buildFooterElement, buildStatsTags } from "../format/card.js";
 import { getTenantAccessToken, checkTokenExpiry } from "./client.js";
 import { createOverflowDocument, registerDocument, cleanupOldDocuments } from "./document.js";
 import type { DocumentMeta } from "../format/index.js";
@@ -368,20 +367,14 @@ async function replyWithDocument(
     }
 
     const elements: any[] = [{ tag: "markdown", content: replyMsg }];
-    const footer = buildFooterMarkdown({
+    const footer = buildFooterElement({
       inputTokens: stats?.inputTokens,
       outputTokens: stats?.outputTokens,
       toolCount: stats?.toolCount,
     });
     if (footer) {
-      elements.push({ tag: "hr" }, { tag: "markdown", content: footer, text_size: "notation" });
+      elements.push({ tag: "hr" }, footer);
     }
-
-    const tags: Array<{ text: string; color: string }> = [];
-    if (stats?.model) tags.push({ text: stats.model, color: "blue" });
-    const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
-    if (totalTokens > 0) tags.push({ text: `${totalTokens.toLocaleString()} tokens`, color: "turquoise" });
-    if (stats?.duration != null) tags.push({ text: formatDuration(stats.duration), color: "orange" });
 
     const docCard: any = {
       schema: "2.0",
@@ -391,7 +384,7 @@ async function replyWithDocument(
         subtitle: "内容已写入云文档",
         template: "green",
         iconImgKey: options?.headerIconImgKey,
-        tags,
+        tags: buildStatsTags(stats ?? {}),
       }),
       body: { elements },
     };

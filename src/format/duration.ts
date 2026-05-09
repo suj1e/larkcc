@@ -154,7 +154,7 @@ function buildToolResultPanel(entry: ToolResultEntry): any {
   const content = formatToolContent(entry.toolName, entry.detail, raw);
 
   const headerTitle = entry.detail
-    ? `${entry.label} — ${entry.detail}`
+    ? `**${entry.label}** \`${entry.detail}\``
     : entry.label;
 
   return {
@@ -163,7 +163,7 @@ function buildToolResultPanel(entry: ToolResultEntry): any {
     background_color: "grey",
     header: {
       title: {
-        tag: "plain_text",
+        tag: "markdown",
         content: headerTitle,
       },
       vertical_align: "center",
