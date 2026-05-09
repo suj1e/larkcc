@@ -13,7 +13,7 @@ import { truncateSafely } from "./card-optimize.js";
 export const THINKING_OVERFLOW_TRUNCATE = 3000;
 
 /** 工具结果截断阈值（字符数） */
-export const TOOL_RESULT_TRUNCATE = 500;
+export const TOOL_RESULT_TRUNCATE = 2000;
 
 // ── 时间格式化 ─────────────────────────────────────────────
 
@@ -93,15 +93,65 @@ export function buildThinkingPanel(options: ThinkingPanelOptions): any[] {
 // ── 工具结果折叠面板 ─────────────────────────────────────
 
 export interface ToolResultEntry {
+  toolName: string;
   label: string;
   detail: string;
   resultPreview: string;
 }
 
+// ── 工具内容格式化 ─────────────────────────────────────
+
+const EXT_LANG_MAP: Record<string, string> = {
+  ts: "typescript", tsx: "typescript",
+  js: "javascript", jsx: "javascript", mjs: "javascript",
+  py: "python",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  json: "json",
+  yaml: "yaml", yml: "yaml",
+  md: "markdown",
+  html: "html", htm: "html",
+  css: "css",
+  sql: "sql",
+  sh: "bash", bash: "bash", zsh: "bash",
+  xml: "xml",
+  toml: "toml",
+  ini: "ini",
+  c: "c", h: "c",
+  cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+  rb: "ruby",
+  php: "php",
+  swift: "swift",
+  kt: "kotlin", kts: "kotlin",
+  dart: "dart",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  diff: "diff",
+};
+
+function detectLangFromPath(filePath: string): string {
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return EXT_LANG_MAP[ext] ?? "";
+}
+
+function formatToolContent(toolName: string, detail: string, result: string): string {
+  if (toolName === "Read") {
+    const lang = detectLangFromPath(detail);
+    return "```" + lang + "\n" + result + "\n```";
+  }
+  if (toolName === "Bash") {
+    return "```bash\n" + result + "\n```";
+  }
+  return result;
+}
+
 function buildToolResultPanel(entry: ToolResultEntry): any {
-  const preview = entry.resultPreview.length > TOOL_RESULT_TRUNCATE
+  const raw = entry.resultPreview.length > TOOL_RESULT_TRUNCATE
     ? truncateSafely(entry.resultPreview, TOOL_RESULT_TRUNCATE, "\n...")
     : entry.resultPreview;
+
+  const content = formatToolContent(entry.toolName, entry.detail, raw);
 
   const headerTitle = entry.detail
     ? `${entry.label} — ${entry.detail}`
@@ -131,7 +181,7 @@ function buildToolResultPanel(entry: ToolResultEntry): any {
     elements: [
       {
         tag: "markdown",
-        content: preview,
+        content,
         text_size: "notation",
       },
     ],

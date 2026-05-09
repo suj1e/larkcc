@@ -35,7 +35,7 @@ export interface ReplyFinalOptions {
     toolCount?: number;
   };
   headerIconImgKey?: string;
-  toolResults?: Array<{ label: string; detail: string; resultPreview: string }>;
+  toolResults?: Array<{ toolName: string; label: string; detail: string; resultPreview: string }>;
 }
 
 /** 回复完成选项（别名，供流式模块使用） */

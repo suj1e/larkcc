@@ -114,7 +114,7 @@ export async function runAgent(
   let reasoningStartTime: number | null = null;
   let toolCallCount = 0;
   const toolMsgMap = new Map<string, { msgId: string; label: string; detail: string }>();
-  const cardkitToolResults: Array<{ id: string; label: string; detail: string; resultPreview?: string }> = [];
+  const cardkitToolResults: Array<{ id: string; name: string; label: string; detail: string; resultPreview?: string }> = [];
 
   // 构建 ReplyContext
   const replyContext = buildReplyContext(config, profile, cwd, chatId, rootMsgId);
@@ -256,7 +256,7 @@ export async function runAgent(
             const detail = formatInput(block.name, block.input ?? {});
             logger.tool(block.name, detail);
             await cardkitCtrl?.updateStatus(`<text_tag color='orange'>${label}</text_tag> \`${detail}\``);
-            cardkitToolResults.push({ id: block.id, label, detail });
+            cardkitToolResults.push({ id: block.id, name: block.name, label, detail });
             break;
           }
           if (SILENT_TOOLS.has(block.name)) break;
@@ -412,7 +412,7 @@ export async function runAgent(
           headerIconImgKey: config.header_icon_img_key,
           toolResults: cardkitToolResults
             .filter(t => t.resultPreview !== undefined)
-            .map(({ label, detail, resultPreview }) => ({ label, detail, resultPreview: resultPreview! })),
+            .map(({ name, label, detail, resultPreview }) => ({ toolName: name, label, detail, resultPreview: resultPreview! })),
         };
 
         if (cardkitCtrl) {
