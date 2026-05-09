@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-05-09
+
+### Changed
+
+- Footer stats layout: single-line grey text → column_set with equal-width columns (input/output tokens, tool count)
+- Tool panel header: plain text → markdown formatting (bold label + inline code detail)
+- Task panel footer: single-line grey text → column_set
+- Extract `buildStatsTags()` to eliminate duplicated tag construction in cardkit.ts and message.ts
+
 ## [0.12.3] - 2026-05-09
 
 ### Fixed
