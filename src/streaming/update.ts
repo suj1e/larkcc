@@ -9,13 +9,13 @@
 
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "../format/card-optimize.js";
-import { STREAMING_TRUNCATE } from "../format/duration.js";
 import { parseThinking, stripThinking } from "../format/thinking.js";
+import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
+import type { IStreamingCard } from "./flush.js";
 import type { StreamingConfig } from "../config.js";
-import type { ReplyContext, CompletionOptions, CardBuildOptions } from "../feishu.js";
-import { replyFinalCard, buildMarkdownCard } from "../feishu.js";
-import { FlushController } from "./types.js";
-import type { IStreamingCard } from "./types.js";
+import type { ReplyContext, CompletionOptions, CardBuildOptions } from "../feishu/index.js";
+import { replyFinalCard, buildMarkdownCard } from "../feishu/index.js";
+import { buildCard, markdown } from "../card/index.js";
 
 const TRUNCATE_LIMIT = STREAMING_TRUNCATE;
 
@@ -68,11 +68,10 @@ class UpdateStreamingCard implements IStreamingCard {
     if (this._started) return;
 
     try {
-      const card: any = {
-        schema: "2.0",
+      const card: any = buildCard({
+        elements: [markdown("⏳ 思考中...")],
         config: { wide_screen_mode: true },
-        body: { elements: [{ tag: "markdown", content: "⏳ 思考中..." }] },
-      };
+      });
       if (this.cardTitle) {
         card.header = {
           title: { tag: "plain_text", content: this.cardTitle },

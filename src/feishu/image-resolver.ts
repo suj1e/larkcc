@@ -14,20 +14,8 @@
  * 失败的图片保留原始 URL，由后续 sanitizeContent 降级为链接。
  */
 
-import { extractCodeBlocks, restoreCodeBlocks } from "./card-optimize.js";
-import { ProxyAgent, fetch as undiciFetch } from "undici";
-import type { Dispatcher } from "undici";
-
-// ── 代理感知 fetch ─────────────────────────────────────────
-
-let _proxyDispatcher: Dispatcher | undefined;
-
-function fetchWithProxy(url: string | URL, init?: Record<string, unknown>) {
-  const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY;
-  if (!proxyUrl) return undiciFetch(url, init);
-  if (!_proxyDispatcher) _proxyDispatcher = new ProxyAgent(proxyUrl);
-  return undiciFetch(url, { ...init, dispatcher: _proxyDispatcher });
-}
+import { extractCodeBlocks, restoreCodeBlocks } from "../format/card-optimize.js";
+import { fetchWithProxy } from "./client.js";
 
 // ── 常量 ───────────────────────────────────────────────────
 

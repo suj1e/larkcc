@@ -6,19 +6,20 @@ import {
   sendToolCard,
   updateToolCard,
   getTenantAccessToken,
-} from "./feishu.js";
-import type { ReplyContext, CompletionOptions } from "./feishu.js";
+} from "./feishu/index.js";
+import type { ReplyContext, CompletionOptions } from "./feishu/index.js";
 import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
 import { LarkccConfig } from "./config.js";
 import { getFormatGuideContent } from "./format/guide.js";
 import { stripThinking } from "./format/thinking.js";
-import { formatDuration, TOOL_RESULT_TRUNCATE } from "./format/duration.js";
+import { formatDuration } from "./format/time.js";
 import { truncateSafely } from "./format/card-optimize.js";
-import { resolveImages } from "./format/image-resolver.js";
+import { resolveImages } from "./feishu/image-resolver.js";
+import { TOOL_RESULT_TRUNCATE } from "./card/index.js";
 import { createStreamingCard } from "./streaming/update.js";
 import { CardKitController } from "./streaming/cardkit.js";
-import { TaskPanelController } from "./streaming/task-panel-controller.js";
+import { TaskPanelController } from "./streaming/task-panel.js";
 
 const TOOL_LABELS: Record<string, string> = {
   Read:            "📂 读取文件",

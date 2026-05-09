@@ -4,7 +4,7 @@
  * 按 profile + chat_id 隔离多文件会话状态
  */
 
-import { DownloadedFile } from "./feishu.js";
+import { DownloadedFile } from "./feishu/index.js";
 
 // 多文件项目类型
 export interface MultiFileItem {

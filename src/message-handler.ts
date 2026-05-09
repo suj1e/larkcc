@@ -1,8 +1,8 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import path from "path";
 import os from "os";
-import { sendText, downloadImage, downloadFile } from "./feishu.js";
-import type { DownloadedFile } from "./feishu.js";
+import { sendText, downloadImage, downloadFile } from "./feishu/index.js";
+import type { DownloadedFile } from "./feishu/index.js";
 import { runAgent, ImageInput } from "./agent.js";
 import { LarkccConfig, saveOwnerOpenId } from "./config.js";
 import { parseCommand, CommandContext, runCmd } from "./commands.js";

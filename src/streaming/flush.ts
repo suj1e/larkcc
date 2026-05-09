@@ -5,6 +5,11 @@
  * IStreamingCard：流式卡片统一接口
  */
 
+// ── 常量 ──────────────────────────────────────────────────
+
+/** 流式内容截断阈值（字符数） */
+export const STREAMING_TRUNCATE = 4000;
+
 // ── FlushController ──────────────────────────────────────────
 
 const LONG_GAP_MS = 2000;   // 2 秒无新内容，强制刷新
@@ -146,9 +151,9 @@ export class FlushController {
 
 // ── 流式卡片接口 ──────────────────────────────────────────────
 
-import type { CompletionOptions } from "../feishu.js";
+import type { CompletionOptions } from "../feishu/index.js";
 
-/** @deprecated Import CompletionOptions from "../feishu.js" instead */
+/** @deprecated Import CompletionOptions from "../feishu/index.js" instead */
 export type CompleteOptions = CompletionOptions;
 
 export interface IStreamingCard {

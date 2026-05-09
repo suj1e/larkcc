@@ -1,8 +1,8 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { OverflowConfig, CardTableConfig } from "../config.js";
 import { sanitizeContent, formatWarnings, countTables, optimizeForCard } from "../format/index.js";
-import { buildThinkingPanel } from "../format/duration.js";
-import { buildHeader, buildFooterElement, buildStatsTags } from "../format/card.js";
+import { buildCard, buildSimpleCard, buildMarkdownCard, buildThinkingPanel, collapsiblePanel, markdown, hr, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
+import type { CardBuildOptions } from "../card/index.js";
 import { getTenantAccessToken, checkTokenExpiry } from "./client.js";
 import { createOverflowDocument, registerDocument, cleanupOldDocuments } from "./document.js";
 import type { DocumentMeta } from "../format/index.js";
@@ -40,12 +40,7 @@ export interface ReplyFinalOptions {
 /** 回复完成选项（别名，供流式模块使用） */
 export type CompletionOptions = ReplyFinalOptions;
 
-export interface CardBuildOptions {
-  thinking?: string;
-  thinkingInProgress?: boolean;
-  reasoningElapsedMs?: number;
-  cardTitle?: string;
-}
+export type { CardBuildOptions } from "../card/index.js";
 
 // ── 消息发送 ─────────────────────────────────────────────────
 
@@ -464,49 +459,22 @@ export async function updateToolCard(
   resultPreview: string
 ): Promise<void> {
   const elements: any[] = [
-    {
-      tag: "markdown",
-      content: `${label}\n\`${detail}\``,
-    },
+    markdown(`${label}\n\`${detail}\``),
   ];
 
   if (resultPreview.trim()) {
-    elements.push({
-      tag: "collapsible_panel",
-      expanded: false,
-      background_color: "grey",
-      header: {
-        title: {
-          tag: "plain_text",
-          content: `📋 查看结果`,
-        },
-        vertical_align: "center",
-        icon: {
-          tag: "standard_icon",
-          token: "down-small-ccm_outlined",
-          size: "16px 16px",
-        },
-        icon_position: "right",
-        icon_expanded_angle: -180,
-      },
-      border: { color: "grey", corner_radius: "5px" },
-      vertical_spacing: "8px",
-      padding: "8px 8px 8px 8px",
-      elements: [
-        {
-          tag: "markdown",
-          content: resultPreview,
-          text_size: "notation",
-        },
-      ],
-    });
+    elements.push(collapsiblePanel({
+      title: { tag: "plain_text", content: "📋 查看结果" },
+      backgroundColor: "grey",
+      iconPosition: "right",
+      elements: [markdown(resultPreview, { text_size: "notation" })],
+    }));
   }
 
-  const card: any = {
-    schema: "2.0",
+  const card = buildCard({
+    elements,
     config: { wide_screen_mode: true },
-    body: { elements },
-  };
+  });
 
   await client.im.message.patch({
     path: { message_id: msgId },
@@ -515,38 +483,38 @@ export async function updateToolCard(
 }
 
 // ── 卡片构建 ─────────────────────────────────────────────────
+// buildMarkdownCard 已迁移至 ../card/card.ts，通过 barrel re-export 使用
 
-export function buildMarkdownCard(markdown: string, warnings: string[] = [], options?: CardBuildOptions) {
-  let content = markdown;
-  if (warnings.length > 0) {
-    content += formatWarnings(warnings);
+// ── 发送辅助 ─────────────────────────────────────────────────
+
+export async function sendMarkdownCardMessage(
+  client: lark.Client,
+  chatId: string,
+  content: string,
+  options?: {
+    rootMsgId?: string;
+    reply?: boolean;
+  },
+): Promise<void> {
+  const { content: sanitizedContent, warnings } = sanitizeContent(content);
+  const card = buildSimpleCard(sanitizedContent, warnings);
+
+  if (options?.reply && options.rootMsgId) {
+    await client.im.message.reply({
+      path: { message_id: options.rootMsgId },
+      data: {
+        msg_type: "interactive",
+        content: JSON.stringify(card),
+      },
+    });
+  } else {
+    await client.im.message.create({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: chatId,
+        msg_type: "interactive",
+        content: JSON.stringify(card),
+      },
+    });
   }
-
-  const elements: any[] = [];
-
-  if (options?.thinkingInProgress) {
-    elements.push({ tag: "markdown", content: "💭 思考中..." });
-  } else if (options?.thinking) {
-    elements.push(...buildThinkingPanel({
-      thinking: options.thinking,
-      reasoningElapsedMs: options.reasoningElapsedMs,
-    }));
-  }
-
-  elements.push({ tag: "markdown", content });
-
-  const card: any = {
-    schema: "2.0",
-    config: { wide_screen_mode: true },
-    body: { elements },
-  };
-
-  if (options?.cardTitle) {
-    card.header = {
-      title: { tag: "plain_text", content: options.cardTitle },
-      template: "blue",
-    };
-  }
-
-  return card;
 }

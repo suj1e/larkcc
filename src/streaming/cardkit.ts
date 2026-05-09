@@ -21,12 +21,12 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "../format/card-optimize.js";
 import { stripThinking } from "../format/thinking.js";
-import { buildThinkingPanel, buildToolPanels, STREAMING_TRUNCATE } from "../format/duration.js";
-import { buildHeader, buildFooterElement, buildStatsTags } from "../format/card.js";
-import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "../feishu.js";
-import type { ReplyContext, CompletionOptions } from "../feishu.js";
-import { FlushController } from "./types.js";
-import type { FlushControllerOptions } from "./types.js";
+import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
+import type { FlushControllerOptions } from "./flush.js";
+import { buildCard, markdown, hr, buildThinkingPanel, buildToolPanels, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
+import type { ToolResultEntry } from "../card/index.js";
+import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "../feishu/index.js";
+import type { ReplyContext, CompletionOptions } from "../feishu/index.js";
 import { countTables } from "../format/index.js";
 
 // ── 常量 ──────────────────────────────────────────────────
@@ -280,30 +280,21 @@ export class CardKitController {
   private buildAbortCard(content: string, extraElements?: any[]): any {
     const elements: any[] = [
       ...(extraElements ?? []),
-      {
-        tag: "markdown",
-        content,
-        element_id: this.streamElementId,
-      },
+      markdown(content, { element_id: this.streamElementId }),
     ];
 
-    const cardJson: any = {
-      schema: "2.0",
-      config: {
-        wide_screen_mode: true,
-        width_mode: "fill",
-      },
-      body: { elements },
-    };
-
-    if (this.cardTitle) {
-      cardJson.header = buildHeader({
-        title: this.cardTitle,
-        subtitle: "已停止",
-        template: "grey",
-        iconImgKey: this.headerIconImgKey,
-      });
-    }
+    const cardJson = buildCard({
+      elements,
+      config: { wide_screen_mode: true, width_mode: "fill" },
+      ...(this.cardTitle ? {
+        header: buildHeader({
+          title: this.cardTitle,
+          subtitle: "已停止",
+          template: "grey",
+          iconImgKey: this.headerIconImgKey,
+        }),
+      } : {}),
+    });
 
     return cardJson;
   }
@@ -340,29 +331,22 @@ export class CardKitController {
    * - 单元素架构：只有 streaming_content，工具状态作为前缀拼接
    */
   private async createCardEntity(): Promise<void> {
-    const cardJson: any = {
-      schema: "2.0",
+    const cardJson: any = buildCard({
+      elements: [markdown("", { element_id: this.streamElementId })],
       config: {
         streaming_mode: true,
         wide_screen_mode: true,
         update_multi: true,
         width_mode: "fill",
       },
-      summary: {
-        content: "🤔 Claude 正在思考...",
-        i18n_content: {
-          zh_cn: "🤔 Claude 正在思考...",
-          en_us: "🤔 Claude is thinking...",
-        },
-      },
-      body: {
-        elements: [
-          {
-            tag: "markdown",
-            content: "",
-            element_id: this.streamElementId,
-          },
-        ],
+    });
+
+    // CardKit 专属字段
+    cardJson.summary = {
+      content: "🤔 Claude 正在思考...",
+      i18n_content: {
+        zh_cn: "🤔 Claude 正在思考...",
+        en_us: "🤔 Claude is thinking...",
       },
     };
 
@@ -554,11 +538,7 @@ export class CardKitController {
   private buildFinalCard(content: string, extraElements?: any[], stats?: CompletionOptions['stats']): any {
     const elements: any[] = [
       ...(extraElements ?? []),
-      {
-        tag: "markdown",
-        content,
-        element_id: this.streamElementId,
-      },
+      markdown(content, { element_id: this.streamElementId }),
     ];
 
     const footer = buildFooterElement({
@@ -567,29 +547,22 @@ export class CardKitController {
       toolCount: stats?.toolCount,
     });
     if (footer) {
-      elements.push({ tag: "hr" }, footer);
+      elements.push(hr(), footer);
     }
 
-    const cardJson: any = {
-      schema: "2.0",
-      config: {
-        wide_screen_mode: true,
-        width_mode: "fill",
-      },
-      body: { elements },
-    };
-
-    if (this.cardTitle) {
-      cardJson.header = buildHeader({
-        title: this.cardTitle,
-        subtitle: "对话完成",
-        template: "green",
-        iconImgKey: this.headerIconImgKey,
-        tags: buildStatsTags(stats ?? {}),
-      });
-    }
-
-    return cardJson;
+    return buildCard({
+      elements,
+      config: { wide_screen_mode: true, width_mode: "fill" },
+      ...(this.cardTitle ? {
+        header: buildHeader({
+          title: this.cardTitle,
+          subtitle: "对话完成",
+          template: "green",
+          iconImgKey: this.headerIconImgKey,
+          tags: buildStatsTags(stats ?? {}),
+        }),
+      } : {}),
+    });
   }
 
   /**

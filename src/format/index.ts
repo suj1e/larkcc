@@ -10,15 +10,9 @@ export * from "./constants.js";
 export { sanitizeContent, formatWarnings } from "./sanitize.js";
 export type { SanitizeResult } from "./sanitize.js";
 
-// 卡片处理
-export {
-  buildSimpleCard,
-  sendMarkdownCardMessage,
-} from "./card.js";
-
 // 文档处理
-export { markdownToBlocks } from "./document.js";
-export type { DocumentMeta } from "./document.js";
+export { markdownToBlocks } from "./doc.js";
+export type { DocumentMeta } from "./doc.js";
 
 // 解析器
 export {
@@ -65,6 +59,6 @@ export { optimizeForCard, truncateSafely } from "./card-optimize.js";
 export { parseThinking, stripThinking } from "./thinking.js";
 export type { ThinkingResult } from "./thinking.js";
 
-// 图片解析
-export { resolveImages } from "./image-resolver.js";
-export type { ImageResolveResult } from "./image-resolver.js";
+// 图片解析（已迁移至 ../feishu/image-resolver.ts）
+export { resolveImages } from "../feishu/image-resolver.js";
+export type { ImageResolveResult } from "../feishu/image-resolver.js";
