@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5] - 2026-05-09
+
+### Changed
+
+- Sub-agent card: swap header title/subtitle (description as title, "Sub Agent" as subtitle), add header tags (elapsed time + tokens)
+- Sub-agent card: display tool call sequence with arrow display; terminal state merges consecutive duplicates with counts
+- Replace sub-agent footer column_set with header text_tag_list, removing duplicate info between header and footer
+- Accumulate tool call history from progress events in TaskPanelController
+- Logger timestamp color: `chalk.gray` → `chalk.blue`
+
+### Fixed
+
+- Tool result truncation: remove 500-char early truncation in agent.ts (both CardKit and non-CardKit paths), let `buildToolResultPanel` handle it uniformly at 2000 chars
+- Extract `STREAMING_TRUNCATE` (4000) and `TASK_SUMMARY_TRUNCATE` (3000) as shared constants, eliminating duplicated `TRUNCATE_LIMIT` in cardkit.ts and streaming.ts
+- Remove unused `truncate()` helper and `THINKING_OVERFLOW_TRUNCATE` import in cardkit.ts
+
 ## [0.12.4] - 2026-05-09
 
 ### Changed
