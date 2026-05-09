@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.7] - 2026-05-10
+
+### Changed
+
+- Upgrade `@larksuiteoapi/node-sdk` 1.61.1 → 1.63.1
+- Restructure streaming modules into `streaming/` subdirectory
+- Reorganize module structure and rename files for clarity
+- Consolidate directories and rename modules for clarity
+
 ## [0.12.6] - 2026-05-09
 
 ### Fixed
