@@ -12,8 +12,8 @@ importers:
         specifier: ^0.2.114
         version: 0.2.114(zod@4.3.6)
       '@larksuiteoapi/node-sdk':
-        specifier: ^1.61.1
-        version: 1.61.1
+        specifier: ^1.63.1
+        version: 1.63.1
       '@types/js-yaml':
         specifier: ^4
         version: 4.0.9
@@ -288,8 +288,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@larksuiteoapi/node-sdk@1.61.1':
-    resolution: {integrity: sha512-BxLBCXk/652I0nWduQbiIrTH2TPe/i4ZD6UhW3VCTVFzrOq5Y9SKvAwanBE6z1ZyEPL6iLnXg/TfGvGSzG6MLw==}
+  '@larksuiteoapi/node-sdk@1.63.1':
+    resolution: {integrity: sha512-bVC2QVkITZ1i6kLP7hI7DXtp61ic9shP/F+bp/2qZ0ISSvrcHp2euu1xt6C29jPJVNieRgvdsBPuapOlybviVw==}
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -1287,7 +1287,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@larksuiteoapi/node-sdk@1.61.1':
+  '@larksuiteoapi/node-sdk@1.63.1':
     dependencies:
       axios: 1.13.6
       lodash.identity: 3.0.0
