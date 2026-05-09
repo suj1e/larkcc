@@ -16,9 +16,9 @@ import { stripThinking } from "./format/thinking.js";
 import { formatDuration, TOOL_RESULT_TRUNCATE } from "./format/duration.js";
 import { truncateSafely } from "./format/card-optimize.js";
 import { resolveImages } from "./format/image-resolver.js";
-import { createStreamingCard } from "./streaming.js";
-import { CardKitController } from "./cardkit.js";
-import { TaskPanelController } from "./task-panel.js";
+import { createStreamingCard } from "./streaming/update.js";
+import { CardKitController } from "./streaming/cardkit.js";
+import { TaskPanelController } from "./streaming/task-panel-controller.js";
 
 const TOOL_LABELS: Record<string, string> = {
   Read:            "📂 读取文件",

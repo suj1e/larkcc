@@ -19,15 +19,15 @@
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
-import { optimizeForCard, truncateSafely } from "./format/card-optimize.js";
-import { stripThinking } from "./format/thinking.js";
-import { buildThinkingPanel, buildToolPanels, STREAMING_TRUNCATE } from "./format/duration.js";
-import { buildHeader, buildFooterElement, buildStatsTags } from "./format/card.js";
-import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./feishu.js";
-import type { ReplyContext, CompletionOptions } from "./feishu.js";
-import type { FlushControllerOptions } from "./streaming.js";
-import { FlushController } from "./streaming.js";
-import { countTables } from "./format/index.js";
+import { optimizeForCard, truncateSafely } from "../format/card-optimize.js";
+import { stripThinking } from "../format/thinking.js";
+import { buildThinkingPanel, buildToolPanels, STREAMING_TRUNCATE } from "../format/duration.js";
+import { buildHeader, buildFooterElement, buildStatsTags } from "../format/card.js";
+import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "../feishu.js";
+import type { ReplyContext, CompletionOptions } from "../feishu.js";
+import { FlushController } from "./types.js";
+import type { FlushControllerOptions } from "./types.js";
+import { countTables } from "../format/index.js";
 
 // ── 常量 ──────────────────────────────────────────────────
 
@@ -601,4 +601,3 @@ export class CardKitController {
   }
 
 }
-

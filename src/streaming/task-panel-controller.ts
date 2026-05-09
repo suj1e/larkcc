@@ -7,8 +7,8 @@
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
-import { sendTaskCard, updateTaskCard, type TaskPanelStatus } from "./feishu.js";
-import { logger } from "./logger.js";
+import { sendTaskCard, updateTaskCard, type TaskPanelStatus } from "../feishu.js";
+import { logger } from "../logger.js";
 
 interface TaskState {
   msgId: string;
