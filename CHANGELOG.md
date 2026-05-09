@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-05-09
+
+### Fixed
+
+- Suppress SDK warning for unhandled `im.message.reaction.created_v1` / `deleted_v1` events
+
+## [0.12.2] - 2026-05-09
+
+### Added
+
+- Format tool result content by type: Read results use language-tagged code blocks (auto-detected from file extension), Bash results use bash code blocks
+- Increase tool result truncation threshold from 500 to 2000 characters
+
 ## [0.12.1] - 2026-05-09
 
 ### Added

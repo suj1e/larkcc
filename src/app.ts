@@ -309,6 +309,8 @@ export async function startApp(
   wsClient.start({
     eventDispatcher: new lark.EventDispatcher({}).register({
       "im.message.receive_v1": handler,
+      "im.message.reaction.created_v1": () => {},
+      "im.message.reaction.deleted_v1": () => {},
     }),
   });
 
