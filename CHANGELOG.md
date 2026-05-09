@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.6] - 2026-05-09
+
+### Fixed
+
+- Fix `Claude Code native binary not found` error on Windows: cross-platform claude binary detection (`where` on Windows, `which` on POSIX)
+- Add `claude.path` config field for manual override of Claude Code binary location
+- Fix `ensureEnv()` and `ensureClaudeInPath()` for Windows: skip bash PATH injection, use Windows common paths (`APPDATA/npm`), correct PATH separator (`;` vs `:`)
+
 ## [0.12.5] - 2026-05-09
 
 ### Changed
