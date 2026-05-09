@@ -15,7 +15,7 @@
  */
 
 import { extractCodeBlocks, restoreCodeBlocks } from "../format/card-optimize.js";
-import { fetchWithProxy } from "./client.js";
+import { fetchWithProxy } from "./lark.js";
 
 // ── 常量 ───────────────────────────────────────────────────
 

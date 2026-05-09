@@ -151,9 +151,9 @@ export class FlushController {
 
 // ── 流式卡片接口 ──────────────────────────────────────────────
 
-import type { CompletionOptions } from "../feishu/index.js";
+import type { CompletionOptions } from "./index.js";
 
-/** @deprecated Import CompletionOptions from "../feishu/index.js" instead */
+/** @deprecated Import CompletionOptions from "./index.js" instead */
 export type CompleteOptions = CompletionOptions;
 
 export interface IStreamingCard {

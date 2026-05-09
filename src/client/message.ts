@@ -3,7 +3,7 @@ import { OverflowConfig, CardTableConfig } from "../config.js";
 import { sanitizeContent, formatWarnings, countTables, optimizeForCard } from "../format/index.js";
 import { buildCard, buildSimpleCard, buildMarkdownCard, buildThinkingPanel, collapsiblePanel, markdown, hr, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
 import type { CardBuildOptions } from "../card/index.js";
-import { getTenantAccessToken, checkTokenExpiry } from "./client.js";
+import { getTenantAccessToken, checkTokenExpiry } from "./lark.js";
 import { createOverflowDocument, registerDocument, cleanupOldDocuments } from "./document.js";
 import type { DocumentMeta } from "../format/index.js";
 

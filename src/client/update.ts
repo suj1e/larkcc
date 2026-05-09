@@ -13,8 +13,8 @@ import { parseThinking, stripThinking } from "../format/thinking.js";
 import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
 import type { IStreamingCard } from "./flush.js";
 import type { StreamingConfig } from "../config.js";
-import type { ReplyContext, CompletionOptions, CardBuildOptions } from "../feishu/index.js";
-import { replyFinalCard, buildMarkdownCard } from "../feishu/index.js";
+import type { ReplyContext, CompletionOptions, CardBuildOptions } from "./index.js";
+import { replyFinalCard, buildMarkdownCard } from "./index.js";
 import { buildCard, markdown } from "../card/index.js";
 
 const TRUNCATE_LIMIT = STREAMING_TRUNCATE;

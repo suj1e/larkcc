@@ -25,8 +25,8 @@ import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
 import type { FlushControllerOptions } from "./flush.js";
 import { buildCard, markdown, hr, buildThinkingPanel, buildToolPanels, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
 import type { ToolResultEntry } from "../card/index.js";
-import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "../feishu/index.js";
-import type { ReplyContext, CompletionOptions } from "../feishu/index.js";
+import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./index.js";
+import type { ReplyContext, CompletionOptions } from "./index.js";
 import { countTables } from "../format/index.js";
 
 // ── 常量 ──────────────────────────────────────────────────

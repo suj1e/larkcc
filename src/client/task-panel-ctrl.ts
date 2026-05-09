@@ -1,14 +1,48 @@
 /**
- * 多 Agent 任务面板控制器
+ * 多 Agent 任务面板 — API 调用 + 生命周期控制器
  *
- * 当 Claude 通过 Agent 工具派发子 agent 时，
- * 为每个子 agent 创建独立的飞书任务面板卡片，
- * 实时显示进度摘要、状态和耗时。
+ * 卡片 JSON 构建在 ../card/task-panel.ts
+ * 本文件负责：发送/更新卡片（API）+ 管理多任务状态（Controller）
  */
 
 import * as lark from "@larksuiteoapi/node-sdk";
-import { sendTaskCard, updateTaskCard, type TaskPanelStatus } from "../feishu/index.js";
+import { buildTaskPanelCard } from "../card/index.js";
+import type { TaskPanelStatus, TaskPanelCardOptions } from "../card/index.js";
 import { logger } from "../logger.js";
+
+// Re-export types for consumers
+export type { TaskPanelStatus, TaskPanelCardOptions };
+
+// ── API 调用 ─────────────────────────────────────────────────
+
+export async function sendTaskCard(
+  client: lark.Client,
+  chatId: string,
+  rootMsgId: string,
+  description: string,
+  headerIconImgKey?: string,
+): Promise<string> {
+  const card = buildTaskPanelCard({ description, status: "running", headerIconImgKey });
+  const res = await (client.im.message as any).reply({
+    path: { message_id: rootMsgId },
+    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+  });
+  return res.data?.message_id ?? "";
+}
+
+export async function updateTaskCard(
+  client: lark.Client,
+  msgId: string,
+  options: TaskPanelCardOptions,
+): Promise<void> {
+  const card = buildTaskPanelCard(options);
+  await client.im.message.patch({
+    path: { message_id: msgId },
+    data: { content: JSON.stringify(card) },
+  });
+}
+
+// ── 生命周期控制器 ────────────────────────────────────────────
 
 interface TaskState {
   msgId: string;

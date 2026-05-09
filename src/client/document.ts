@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { fetchWithProxy } from "./client.js";
+import { fetchWithProxy } from "./lark.js";
 import { countTables, markdownToBlocks, BlockType, parseInlineText } from "../format/index.js";
 import type { Block, DocumentMeta, CalloutCreateData } from "../format/index.js";
 

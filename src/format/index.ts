@@ -60,5 +60,5 @@ export { parseThinking, stripThinking } from "./thinking.js";
 export type { ThinkingResult } from "./thinking.js";
 
 // 图片解析（已迁移至 ../feishu/image-resolver.ts）
-export { resolveImages } from "../feishu/image-resolver.js";
-export type { ImageResolveResult } from "../feishu/image-resolver.js";
+export { resolveImages } from "../client/image-resolver.js";
+export type { ImageResolveResult } from "../client/image-resolver.js";

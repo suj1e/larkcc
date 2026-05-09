@@ -5,7 +5,7 @@ import path from "path";
 import os from "os";
 import readline from "readline";
 import { execSync } from "child_process";
-import { createLarkClient, createWSClient } from "./feishu/index.js";
+import { createLarkClient, createWSClient } from "./client/index.js";
 import { LarkccConfig } from "./config.js";
 import { buildStatusCard } from "./card/index.js";
 import { CommandContext } from "./commands.js";
