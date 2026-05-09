@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Tool result collapsible panels in CardKit mode: each tool call is shown as a collapsed panel with result preview in the final card
+- Format tool result content by type: Read results use language-tagged code blocks (auto-detected from file extension), Bash results use bash code blocks
+- Increase tool result truncation threshold from 500 to 2000 characters
 
 ### Fixed
 
