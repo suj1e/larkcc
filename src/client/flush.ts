@@ -151,10 +151,7 @@ export class FlushController {
 
 // ── 流式卡片接口 ──────────────────────────────────────────────
 
-import type { CompletionOptions } from "./index.js";
-
-/** @deprecated Import CompletionOptions from "./index.js" instead */
-export type CompleteOptions = CompletionOptions;
+import type { CompletionOptions } from "./message.js";
 
 export interface IStreamingCard {
   append(text: string): Promise<void>;

@@ -21,12 +21,14 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { optimizeForCard, truncateSafely } from "../format/card-optimize.js";
 import { stripThinking } from "../format/thinking.js";
+import { replyMessage } from "./lark.js";
 import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
 import type { FlushControllerOptions } from "./flush.js";
 import { buildCard, markdown, hr, buildThinkingPanel, buildToolPanels, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
 import type { ToolResultEntry } from "../card/index.js";
-import { replyFinalCard, prepareOverflowContext, createOverflowDocument, registerDocument, cleanupOldDocuments } from "./index.js";
-import type { ReplyContext, CompletionOptions } from "./index.js";
+import { replyFinalCard, prepareOverflowContext } from "./message.js";
+import type { ReplyContext, CompletionOptions } from "./message.js";
+import { createAndRegisterOverflowDoc, cleanupOldDocuments } from "./document.js";
 import { countTables } from "../format/index.js";
 
 // ── 常量 ──────────────────────────────────────────────────
@@ -386,12 +388,9 @@ export class CardKitController {
    * 通过 IM 消息 API 发送卡片到聊天
    */
   private async sendCardMessage(): Promise<void> {
-    await (this.client.im.message as any).reply({
-      path: { message_id: this.rootMsgId },
-      data: {
-        content: JSON.stringify({ type: "card", data: { card_id: this.cardId } }),
-        msg_type: "interactive",
-      },
+    await replyMessage(this.client, this.rootMsgId, {
+      content: JSON.stringify({ type: "card", data: { card_id: this.cardId } }),
+      msgType: "interactive",
     });
   }
 
@@ -458,9 +457,7 @@ export class CardKitController {
         this.client, this.rootMsgId, this.context,
       );
 
-      const { docUrl, docId } = await createOverflowDocument(token, title, rawContent, originalMessage, meta);
-
-      registerDocument(docId, this.context.profile);
+      const { docUrl, docId } = await createAndRegisterOverflowDoc(token, title, rawContent, originalMessage, meta, this.context.profile);
 
       let cardContent = `📝 内容较长，已写入云文档：[${title}](${docUrl})`;
 

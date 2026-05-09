@@ -12,10 +12,12 @@ import { optimizeForCard, truncateSafely } from "../format/card-optimize.js";
 import { parseThinking, stripThinking } from "../format/thinking.js";
 import { STREAMING_TRUNCATE, FlushController } from "./flush.js";
 import type { IStreamingCard } from "./flush.js";
+import { replyMessage } from "./lark.js";
 import type { StreamingConfig } from "../config.js";
-import type { ReplyContext, CompletionOptions, CardBuildOptions } from "./index.js";
-import { replyFinalCard, buildMarkdownCard } from "./index.js";
-import { buildCard, markdown } from "../card/index.js";
+import type { ReplyContext, CompletionOptions } from "./message.js";
+import { replyFinalCard } from "./message.js";
+import { buildCard, markdown, buildMarkdownCard } from "../card/index.js";
+import type { CardBuildOptions } from "../card/index.js";
 
 const TRUNCATE_LIMIT = STREAMING_TRUNCATE;
 
@@ -78,15 +80,11 @@ class UpdateStreamingCard implements IStreamingCard {
           template: "blue",
         };
       }
-      const res = await (this.client.im.message as any).reply({
-        path: { message_id: this.rootMsgId },
-        data: {
-          content: JSON.stringify(card),
-          msg_type: "interactive",
-          reply_in_thread: false,
-        },
+      const res = await replyMessage(this.client, this.rootMsgId, {
+        content: JSON.stringify(card),
+        msgType: "interactive",
       });
-      this.msgId = res.data?.message_id ?? null;
+      this.msgId = res.messageId || null;
 
       if (this.msgId) {
         this.flushCtrl.start();

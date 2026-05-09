@@ -58,7 +58,3 @@ export { optimizeForCard, truncateSafely } from "./card-optimize.js";
 // Thinking 解析
 export { parseThinking, stripThinking } from "./thinking.js";
 export type { ThinkingResult } from "./thinking.js";
-
-// 图片解析（已迁移至 ../feishu/image-resolver.ts）
-export { resolveImages } from "../client/image-resolver.js";
-export type { ImageResolveResult } from "../client/image-resolver.js";

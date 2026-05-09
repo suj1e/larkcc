@@ -15,10 +15,6 @@ export {
 } from "./message.js";
 export type { ReplyContext, ReplyFinalOptions, CompletionOptions } from "./message.js";
 
-// 卡片构建（re-export from card/ directory）
-export { buildMarkdownCard } from "../card/index.js";
-export type { CardBuildOptions } from "../card/index.js";
-
 // 下载
 export { downloadImage, downloadFile } from "./download.js";
 export type { DownloadedFile } from "./download.js";

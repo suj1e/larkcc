@@ -8,6 +8,7 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { buildTaskPanelCard } from "../card/index.js";
 import type { TaskPanelStatus, TaskPanelCardOptions } from "../card/index.js";
+import { replyMessage, patchMessage } from "./lark.js";
 import { logger } from "../logger.js";
 
 // Re-export types for consumers
@@ -23,11 +24,11 @@ export async function sendTaskCard(
   headerIconImgKey?: string,
 ): Promise<string> {
   const card = buildTaskPanelCard({ description, status: "running", headerIconImgKey });
-  const res = await (client.im.message as any).reply({
-    path: { message_id: rootMsgId },
-    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+  const { messageId } = await replyMessage(client, rootMsgId, {
+    content: JSON.stringify(card),
+    msgType: "interactive",
   });
-  return res.data?.message_id ?? "";
+  return messageId;
 }
 
 export async function updateTaskCard(

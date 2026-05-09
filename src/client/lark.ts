@@ -74,3 +74,56 @@ export function checkTokenExpiry(): void {
     cachedToken = null;
   }
 }
+
+// ── 类型安全的 SDK wrapper ─────────────────────────────────────
+
+/** SDK 类型缺失 reply_in_thread，用 wrapper 补齐 */
+interface ReplyOptions {
+  content: string;
+  msgType: string;
+  replyInThread?: boolean;
+}
+
+export async function replyMessage(
+  client: lark.Client,
+  msgId: string,
+  options: ReplyOptions,
+): Promise<{ messageId: string }> {
+  const res = await (client.im.message as any).reply({
+    path: { message_id: msgId },
+    data: {
+      content: options.content,
+      msg_type: options.msgType,
+      reply_in_thread: options.replyInThread ?? false,
+    },
+  });
+  return { messageId: res?.data?.message_id ?? "" };
+}
+
+export async function patchMessage(
+  client: lark.Client,
+  msgId: string,
+  content: string,
+): Promise<void> {
+  await client.im.message.patch({
+    path: { message_id: msgId },
+    data: { content },
+  });
+}
+
+export async function sendMessage(
+  client: lark.Client,
+  chatId: string,
+  content: string,
+  msgType: string,
+): Promise<{ messageId: string }> {
+  const res = await client.im.message.create({
+    params: { receive_id_type: "chat_id" },
+    data: {
+      receive_id: chatId,
+      msg_type: msgType,
+      content,
+    },
+  });
+  return { messageId: (res.data as any)?.message_id ?? "" };
+}

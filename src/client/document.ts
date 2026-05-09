@@ -45,6 +45,20 @@ export function registerDocument(docId: string, profile: string): void {
   saveDocRegistry(profile, records);
 }
 
+/** 创建 overflow 文档并注册到本地 */
+export async function createAndRegisterOverflowDoc(
+  token: string,
+  title: string,
+  markdown: string,
+  originalMessage: string,
+  meta: import("../format/index.js").DocumentMeta,
+  profile: string,
+) {
+  const result = await createOverflowDocument(token, title, markdown, originalMessage, meta);
+  registerDocument(result.docId, profile);
+  return result;
+}
+
 function getOldestDocuments(profile: string, keepCount: number): DocumentRecord[] {
   const records = loadDocRegistry(profile);
   const sortedDocs = [...records].sort((a, b) => a.createdAt - b.createdAt);

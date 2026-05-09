@@ -1,10 +1,10 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import { OverflowConfig, CardTableConfig } from "../config.js";
 import { sanitizeContent, formatWarnings, countTables, optimizeForCard } from "../format/index.js";
-import { buildCard, buildSimpleCard, buildMarkdownCard, buildThinkingPanel, collapsiblePanel, markdown, hr, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
+import { buildCard, buildMarkdownCard, buildThinkingPanel, collapsiblePanel, markdown, hr, buildHeader, buildFooterElement, buildStatsTags } from "../card/index.js";
 import type { CardBuildOptions } from "../card/index.js";
-import { getTenantAccessToken, checkTokenExpiry } from "./lark.js";
-import { createOverflowDocument, registerDocument, cleanupOldDocuments } from "./document.js";
+import { getTenantAccessToken, checkTokenExpiry, replyMessage, patchMessage, sendMessage } from "./lark.js";
+import { createAndRegisterOverflowDoc, cleanupOldDocuments } from "./document.js";
 import type { DocumentMeta } from "../format/index.js";
 
 // ── 共享类型 ──────────────────────────────────────────────────
@@ -67,11 +67,11 @@ export async function replyText(
   text: string
 ): Promise<string> {
   const card = buildMarkdownCard(text);
-  const res = await (client.im.message as any).reply({
-    path: { message_id: rootMsgId },
-    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+  const { messageId } = await replyMessage(client, rootMsgId, {
+    content: JSON.stringify(card),
+    msgType: "interactive",
   });
-  return res.data?.message_id ?? "";
+  return messageId;
 }
 
 export async function updateText(
@@ -250,14 +250,14 @@ async function sendMessageChunk(
   try {
     const optimizedContent = optimizeForCard(finalContent);
     const card = buildMarkdownCard(optimizedContent, [], { thinking, cardTitle });
-    await (client.im.message as any).reply({
-      path: { message_id: rootMsgId },
-      data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+    await replyMessage(client, rootMsgId, {
+      content: JSON.stringify(card),
+      msgType: "interactive",
     });
   } catch {
-    await (client.im.message as any).reply({
-      path: { message_id: rootMsgId },
-      data: { content: JSON.stringify({ text: finalContent }), msg_type: "text", reply_in_thread: false },
+    await replyMessage(client, rootMsgId, {
+      content: JSON.stringify({ text: finalContent }),
+      msgType: "text",
     });
   }
 }
@@ -314,10 +314,7 @@ async function patchOrCreateCard(
   if (waitingMsgId) {
     try {
       const card = buildMarkdownCard(content);
-      await (client.im.message as any).patch({
-        path: { message_id: waitingMsgId },
-        data: { content: JSON.stringify(card) },
-      });
+      await patchMessage(client, waitingMsgId, JSON.stringify(card));
       return true;
     } catch {}
   }
@@ -339,11 +336,11 @@ async function replyWithDocument(
   let waitingMsgId: string | undefined;
   try {
     const waitingCard = buildMarkdownCard("📝 内容较长，正在写入云文档...");
-    const waitRes = await (client.im.message as any).reply({
-      path: { message_id: rootMsgId },
-      data: { content: JSON.stringify(waitingCard), msg_type: "interactive", reply_in_thread: false },
+    const { messageId: waitId } = await replyMessage(client, rootMsgId, {
+      content: JSON.stringify(waitingCard),
+      msgType: "interactive",
     });
-    waitingMsgId = waitRes?.data?.message_id;
+    waitingMsgId = waitId || undefined;
   } catch {}
 
   try {
@@ -352,9 +349,7 @@ async function replyWithDocument(
     const cleanupConfig = context.overflow.document.cleanup;
     await cleanupOldDocuments(token, cleanupConfig.max_docs, context.profile);
 
-    const { docUrl, docId, warnings: docWarnings } = await createOverflowDocument(token, title, markdown, originalMessage, meta);
-
-    registerDocument(docId, context.profile);
+    const { docUrl, docId, warnings: docWarnings } = await createAndRegisterOverflowDoc(token, title, markdown, originalMessage, meta, context.profile);
 
     let replyMsg = `📝 内容较长，已写入云文档：${docUrl}`;
     if (docWarnings.length > 0) {
@@ -386,10 +381,7 @@ async function replyWithDocument(
 
     if (waitingMsgId) {
       try {
-        await (client.im.message as any).patch({
-          path: { message_id: waitingMsgId },
-          data: { content: JSON.stringify(docCard) },
-        });
+        await patchMessage(client, waitingMsgId, JSON.stringify(docCard));
         return;
       } catch {}
     }
@@ -444,11 +436,11 @@ export async function sendToolCard(
 
   const content = `${label}\n\`${detail}\`\n${statusIcon}`;
   const card = buildMarkdownCard(content);
-  const res = await (client.im.message as any).reply({
-    path: { message_id: rootMsgId },
-    data: { content: JSON.stringify(card), msg_type: "interactive", reply_in_thread: false },
+  const { messageId } = await replyMessage(client, rootMsgId, {
+    content: JSON.stringify(card),
+    msgType: "interactive",
   });
-  return res.data?.message_id ?? "";
+  return messageId;
 }
 
 export async function updateToolCard(
@@ -483,38 +475,4 @@ export async function updateToolCard(
 }
 
 // ── 卡片构建 ─────────────────────────────────────────────────
-// buildMarkdownCard 已迁移至 ../card/card.ts，通过 barrel re-export 使用
-
-// ── 发送辅助 ─────────────────────────────────────────────────
-
-export async function sendMarkdownCardMessage(
-  client: lark.Client,
-  chatId: string,
-  content: string,
-  options?: {
-    rootMsgId?: string;
-    reply?: boolean;
-  },
-): Promise<void> {
-  const { content: sanitizedContent, warnings } = sanitizeContent(content);
-  const card = buildSimpleCard(sanitizedContent, warnings);
-
-  if (options?.reply && options.rootMsgId) {
-    await client.im.message.reply({
-      path: { message_id: options.rootMsgId },
-      data: {
-        msg_type: "interactive",
-        content: JSON.stringify(card),
-      },
-    });
-  } else {
-    await client.im.message.create({
-      params: { receive_id_type: "chat_id" },
-      data: {
-        receive_id: chatId,
-        msg_type: "interactive",
-        content: JSON.stringify(card),
-      },
-    });
-  }
-}
+// buildMarkdownCard 已迁移至 ../card/compose.ts，通过 barrel re-export 使用
