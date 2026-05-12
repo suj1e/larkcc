@@ -31,6 +31,33 @@ import type { ReplyContext, CompletionOptions } from "./message.js";
 import { createAndRegisterOverflowDoc, cleanupOldDocuments } from "./document.js";
 import { countTables } from "../format/index.js";
 
+// ── Spinner Words（来自 Claude Code CLI） ──────────────────
+
+const SPINNER_WORDS = [
+  "Accomplishing", "Actioning", "Actualizing", "Baking", "Booping",
+  "Brewing", "Calculating", "Cerebrating", "Channelling", "Churning",
+  "Clauding", "Coalescing", "Cogitating", "Combobulating", "Computing",
+  "Concocting", "Conjuring", "Considering", "Contemplating", "Cooking",
+  "Crafting", "Creating", "Crunching", "Deciphering", "Deliberating",
+  "Determining", "Discombobulating", "Divining", "Doing", "Effecting",
+  "Elucidating", "Enchanting", "Envisioning", "Finagling", "Flibbertigibbeting",
+  "Forging", "Forming", "Frolicking", "Generating", "Germinating",
+  "Hatching", "Herding", "Hustling", "Ideating", "Imagining",
+  "Incubating", "Inferring", "Jiving", "Manifesting", "Marinating",
+  "Meandering", "Moseying", "Mulling", "Mustering", "Musing",
+  "Noodling", "Percolating", "Perusing", "Philosophising", "Pondering",
+  "Pontificating", "Processing", "Puttering", "Puzzling", "Reticulating",
+  "Ruminating", "Scheming", "Schlepping", "Shimmying", "Shucking",
+  "Simmering", "Smooshing", "Spelunking", "Spinning", "Stewing",
+  "Sussing", "Synthesizing", "Thinking", "Tinkering", "Transmuting",
+  "Unfurling", "Unravelling", "Vibing", "Wandering", "Whirring",
+  "Wibbling", "Wizarding", "Working", "Wrangling",
+];
+
+function randomSpinnerWord(): string {
+  return SPINNER_WORDS[Math.floor(Math.random() * SPINNER_WORDS.length)];
+}
+
 // ── 常量 ──────────────────────────────────────────────────
 
 const TRUNCATE_LIMIT = STREAMING_TRUNCATE;
@@ -344,18 +371,19 @@ export class CardKitController {
     });
 
     // CardKit 专属字段
+    const spinner = randomSpinnerWord();
     cardJson.summary = {
-      content: "🤔 Claude 正在思考...",
+      content: `🤔 Claude ${spinner}...`,
       i18n_content: {
-        zh_cn: "🤔 Claude 正在思考...",
-        en_us: "🤔 Claude is thinking...",
+        zh_cn: `🤔 Claude ${spinner}...`,
+        en_us: `🤔 Claude ${spinner}...`,
       },
     };
 
     if (this.cardTitle) {
       cardJson.header = buildHeader({
         title: this.cardTitle,
-        subtitle: "正在思考...",
+        subtitle: `⚡ ${spinner}...`,
         template: "indigo",
         iconImgKey: this.headerIconImgKey,
       });
