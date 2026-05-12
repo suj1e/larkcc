@@ -100,6 +100,7 @@ function checkCardKitError(response: any, context: string): CardKitApiError | nu
 
 export class CardKitController {
   private phase: Phase = "idle";
+  private createPromise: Promise<void> | null = null;
   private client: lark.Client;
   private rootMsgId: string;
   private cardTitle: string;
@@ -177,7 +178,7 @@ export class CardKitController {
   /**
    * 两步关闭：关闭 streaming_mode → 更新最终卡片内容（对齐 openclaw-lark）
    */
-  private async closeAndFinalize(cardJson: any): Promise<void> {
+  private async closeAndFinalize(cardJson: Record<string, unknown>): Promise<void> {
     await this.withMutex(async () => {
       this.sequence++;
       await this.closeStreamingMode();
@@ -306,8 +307,8 @@ export class CardKitController {
   /**
    * 构建中止态卡片（grey header）
    */
-  private buildAbortCard(content: string, extraElements?: any[]): any {
-    const elements: any[] = [
+  private buildAbortCard(content: string, extraElements?: Record<string, unknown>[]): Record<string, unknown> {
+    const elements: Record<string, unknown>[] = [
       ...(extraElements ?? []),
       markdown(content, { element_id: this.streamElementId }),
     ];
@@ -333,22 +334,23 @@ export class CardKitController {
   private async ensureCardCreated(): Promise<void> {
     if (this.phase === "streaming") return;
     if (this.phase === "creating") {
-      while (this.phase === "creating") {
-        await new Promise(r => setTimeout(r, 50));
-      }
+      await this.createPromise;
       return;
     }
 
     this.phase = "creating";
-    try {
-      await this.createCardEntity();
-      await this.sendCardMessage();
-      this.flushCtrl.start();
-      this.phase = "streaming";
-    } catch (error) {
-      console.error("[CARDKIT] Card creation failed:", error);
-      this.phase = "aborted";
-    }
+    this.createPromise = (async () => {
+      try {
+        await this.createCardEntity();
+        await this.sendCardMessage();
+        this.flushCtrl.start();
+        this.phase = "streaming";
+      } catch (error) {
+        console.error("[CARDKIT] Card creation failed:", error);
+        this.phase = "aborted";
+      }
+    })();
+    await this.createPromise;
   }
 
   /**
@@ -360,7 +362,7 @@ export class CardKitController {
    * - 单元素架构：只有 streaming_content，工具状态作为前缀拼接
    */
   private async createCardEntity(): Promise<void> {
-    const cardJson: any = buildCard({
+    const cardJson = buildCard({
       elements: [markdown("", { element_id: this.streamElementId })],
       config: {
         streaming_mode: true,
@@ -539,7 +541,7 @@ export class CardKitController {
   /**
    * 更新整个卡片内容（使用 SDK）
    */
-  private async updateCard(cardJson: any): Promise<void> {
+  private async updateCard(cardJson: Record<string, unknown>): Promise<void> {
     const res = await this.client.cardkit.v1.card.update({
       path: { card_id: this.cardId! },
       data: {

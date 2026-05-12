@@ -114,9 +114,7 @@ export function parseTable(lines: string[], startIndex: number): { data: TableDa
     .split("|")
     .map(c => c.trim());
   const alignments = separatorCells.map(parseAlignment);
-
-  // 对齐方式解析（飞书 table_cell create API 不支持 align，保留解析但不使用）
-  const _alignments = alignments;
+  void alignments;
 
   const rows: TableCell[][] = [headerRow];
   const columnCount = headerRow.length;

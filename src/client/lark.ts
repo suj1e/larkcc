@@ -34,14 +34,17 @@ export function createWSClient(appId: string, appSecret: string) {
 
 // ── Token 管理 ──────────────────────────────────────────────────
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+const TOKEN_EXPIRY_BUFFER_S = 300;       // token 提前 5 分钟过期
+const TOKEN_MIN_REMAINING_MS = 600_000;  // 剩余不足 10 分钟时刷新
+
+let cachedToken: { token: string; expiresAt: number; appId: string } | null = null;
 
 export function invalidateTokenCache(): void {
   cachedToken = null;
 }
 
 export async function getTenantAccessToken(appId: string, appSecret: string): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now()) {
+  if (cachedToken && cachedToken.appId === appId && cachedToken.expiresAt > Date.now()) {
     return cachedToken.token;
   }
 
@@ -63,14 +66,15 @@ export async function getTenantAccessToken(appId: string, appSecret: string): Pr
 
   cachedToken = {
     token: data.tenant_access_token,
-    expiresAt: Date.now() + ((data.expire ?? 7200) - 300) * 1000,
+    expiresAt: Date.now() + ((data.expire ?? 7200) - TOKEN_EXPIRY_BUFFER_S) * 1000,
+    appId,
   };
   return cachedToken.token;
 }
 
 /** 使缓存的 token 在下次 getTenantAccessToken 调用时强制刷新（剩余不足 10 分钟时） */
 export function checkTokenExpiry(): void {
-  if (cachedToken && cachedToken.expiresAt - Date.now() < 600_000) {
+  if (cachedToken && cachedToken.expiresAt - Date.now() < TOKEN_MIN_REMAINING_MS) {
     cachedToken = null;
   }
 }

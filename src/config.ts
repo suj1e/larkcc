@@ -127,7 +127,7 @@ const DEFAULT_IMAGE_PROMPT = "分析图片，给出回应";
 const GLOBAL_CONFIG_PATH = path.join(os.homedir(), ".larkcc", "config.yml");
 const PROJECT_CONFIG_NAME = ".larkcc.yml";
 
-const DEFAULT_OVERFLOW: OverflowConfig = {
+export const DEFAULT_OVERFLOW: OverflowConfig = {
   mode: "document",
   chunk: { threshold: 2800 },
   document: {
@@ -202,7 +202,7 @@ const DEFAULT_MULTI_AGENT: MultiAgentConfig = {
 
 const DEFAULT_CARD_TITLE = "Claude";
 
-function loadYml(filePath: string): any {
+function loadYml(filePath: string): unknown {
   if (!fs.existsSync(filePath)) return null;
   try {
     return yaml.load(fs.readFileSync(filePath, "utf8"));
@@ -212,8 +212,8 @@ function loadYml(filePath: string): any {
 }
 
 export function loadConfig(cwd: string, profile?: string): LarkccConfig {
-  const raw: RawConfig = loadYml(GLOBAL_CONFIG_PATH) ?? {};
-  const projectOverride = loadYml(path.join(cwd, PROJECT_CONFIG_NAME)) ?? {};
+  const raw = (loadYml(GLOBAL_CONFIG_PATH) ?? {}) as RawConfig;
+  const projectOverride = (loadYml(path.join(cwd, PROJECT_CONFIG_NAME)) ?? {}) as Partial<RawConfig>;
 
   // 选择 profile
   let feishu: FeishuConfig;
@@ -326,16 +326,16 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   const dir = path.dirname(GLOBAL_CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  let raw: any = loadYml(GLOBAL_CONFIG_PATH) ?? {};
+  let raw = (loadYml(GLOBAL_CONFIG_PATH) ?? {}) as Record<string, unknown>;
 
   if (!profile || profile === "default") {
     raw.feishu = feishu;
   } else {
     if (!raw.profiles) raw.profiles = {};
-    raw.profiles[profile] = { feishu };
+    (raw.profiles as Record<string, unknown>)[profile] = { feishu };
   }
 
-  const SEED_DEFAULTS: Record<string, any> = {
+  const SEED_DEFAULTS: Record<string, unknown> = {
     claude: { permission_mode: "acceptEdits", allowed_tools: DEFAULT_TOOLS },
     overflow: DEFAULT_OVERFLOW,
     image_prompt: DEFAULT_IMAGE_PROMPT,
@@ -352,16 +352,17 @@ export function saveProfile(profile: string | undefined, feishu: FeishuConfig): 
   }
 
   // 确保 cleanup 配置存在（兼容旧配置）
-  if (!raw.overflow.document?.cleanup) {
-    raw.overflow.document = raw.overflow.document || {};
-    raw.overflow.document.cleanup = DEFAULT_OVERFLOW.document.cleanup;
+  const overflow = (raw.overflow ??= {}) as Record<string, any>;
+  if (!overflow.document?.cleanup) {
+    overflow.document = overflow.document || {};
+    overflow.document.cleanup = DEFAULT_OVERFLOW.document.cleanup;
   }
 
   fs.writeFileSync(GLOBAL_CONFIG_PATH, yaml.dump(raw), "utf8");
 }
 
 export function listProfiles(): Array<{ name: string; app_id: string }> {
-  const raw: RawConfig = loadYml(GLOBAL_CONFIG_PATH) ?? {};
+  const raw = (loadYml(GLOBAL_CONFIG_PATH) ?? {}) as RawConfig;
   const result: Array<{ name: string; app_id: string }> = [];
 
   if (raw.feishu?.app_id) {
@@ -382,7 +383,7 @@ export function saveOwnerOpenId(openId: string, profile?: string): void {
   const dir = path.dirname(GLOBAL_CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  let raw: any = loadYml(GLOBAL_CONFIG_PATH) ?? {};
+  let raw = (loadYml(GLOBAL_CONFIG_PATH) ?? {}) as Record<string, any>;
 
   if (!profile || profile === "default") {
     if (!raw.feishu) raw.feishu = {};

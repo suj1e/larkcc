@@ -1,6 +1,7 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import * as fs from "fs";
 import * as path from "path";
+import { detectImageType } from "../shared/image-type.js";
 
 // ── 图片下载 ─────────────────────────────────────────────────
 
@@ -15,7 +16,8 @@ export async function downloadImage(
       path: { message_id: messageId, file_key: imageKey },
       params: { type: "image" },
     });
-    const stream = (res as any).getReadableStream();
+    const stream = (res as any).getReadableStream?.();
+    if (!stream) throw new Error("getReadableStream returned null");
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
       stream.on("data", (chunk: any) => {
@@ -26,11 +28,7 @@ export async function downloadImage(
     });
     const buf = Buffer.concat(chunks);
     const base64 = buf.toString("base64");
-    const header = buf.slice(0, 4).toString("hex");
-    let mediaType = "image/jpeg";
-    if (header.startsWith("89504e47")) mediaType = "image/png";
-    else if (header.startsWith("47494638")) mediaType = "image/gif";
-    else if (header.startsWith("52494646")) mediaType = "image/webp";
+    const { mediaType } = detectImageType(buf);
     const sizeKB = Math.round(buf.length / 1024);
     console.error(`[IMAGE] Downloaded: ${mediaType}, ${sizeKB}KB, base64=${base64.length}chars`);
     return { base64, mediaType };
@@ -68,7 +66,8 @@ export async function downloadFile(
       path: { message_id: messageId, file_key: fileKey },
       params: { type: "file" },
     });
-    const stream = (res as any).getReadableStream();
+    const stream = (res as any).getReadableStream?.();
+    if (!stream) throw new Error("getReadableStream returned null");
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
       stream.on("data", (chunk: any) => {

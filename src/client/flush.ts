@@ -114,7 +114,14 @@ export class FlushController {
     this.flushing = true;
     try {
       await this.onFlush(this.buffer);
-      if (!force) this.sentLength = this.buffer.length;
+      if (!force) {
+        this.sentLength = this.buffer.length;
+        // 截断已发送部分，避免 buffer 无限增长
+        if (this.sentLength > 10000) {
+          this.buffer = this.buffer.slice(this.sentLength);
+          this.sentLength = 0;
+        }
+      }
       this.lastFlushTime = Date.now();
     } catch (error) {
       if (this.onError) {

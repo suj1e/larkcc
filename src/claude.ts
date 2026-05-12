@@ -1,5 +1,4 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { execSync } from "child_process";
 import * as lark from "@larksuiteoapi/node-sdk";
 import {
   replyFinalCard,
@@ -10,7 +9,7 @@ import {
 import type { ReplyContext, CompletionOptions } from "./client/index.js";
 import { getSession, setSession } from "./session.js";
 import { logger } from "./logger.js";
-import { LarkccConfig } from "./config.js";
+import { LarkccConfig, DEFAULT_OVERFLOW } from "./config.js";
 import { getFormatGuideContent } from "./format/guide.js";
 import { stripThinking } from "./format/thinking.js";
 import { formatDuration } from "./format/time.js";
@@ -20,29 +19,10 @@ import { TOOL_RESULT_TRUNCATE } from "./card/index.js";
 import { createStreamingCard } from "./client/update.js";
 import { CardKitController } from "./client/cardkit.js";
 import { TaskPanelController } from "./client/task-panel-ctrl.js";
-
-const TOOL_LABELS: Record<string, string> = {
-  Read:            "📂 读取文件",
-  Write:           "✏️  写入文件",
-  Edit:            "✏️  编辑文件",
-  Bash:            "⚡ 执行命令",
-  Glob:            "🔍 查找文件",
-  Grep:            "🔎 搜索内容",
-  LS:              "📁 列出目录",
-  ExitPlanMode:    "📋 退出计划模式",
-  AskUserQuestion: "💬 提问",
-};
+import { TOOL_LABELS } from "./shared/tool-labels.js";
+import { findClaudeBinary } from "./shared/claude-binary.js";
 
 const SILENT_TOOLS = new Set(["ExitPlanMode", "TodoWrite", "TodoRead"]);
-
-function findClaudeBinary(): string | undefined {
-  const cmd = process.platform === "win32" ? "where claude 2>nul" : "which claude 2>/dev/null || command -v claude 2>/dev/null";
-  try {
-    const result = execSync(cmd, { encoding: "utf8", timeout: 5000 }).trim();
-    if (result) return result.split(/[\r\n]/)[0];
-  } catch {}
-  return undefined;
-}
 
 function formatInput(name: string, input: Record<string, unknown>): string {
   if (["Read", "Write", "Edit"].includes(name))
@@ -65,7 +45,7 @@ function buildReplyContext(
     profile: profile ?? "default",
     cwd,
     sessionId: getSession() ?? "",
-    overflow: config.overflow!,
+    overflow: config.overflow ?? DEFAULT_OVERFLOW,
     chatId,
     rootMsgId,
     appId: config.feishu.app_id,
@@ -109,8 +89,8 @@ interface AgentContext {
   taskPanelCtrl: TaskPanelController | null;
   startTime: number;
   // 可变状态
-  textBuffer: string;
-  thinkingBuffer: string;
+  textBuffer: string[];
+  thinkingBuffer: string[];
   reasoningStartTime: number | null;
   toolCallCount: number;
   toolMsgMap: Map<string, { msgId: string; label: string; detail: string }>;
@@ -124,16 +104,16 @@ function processAssistantEvent(ctx: AgentContext, blocks: Array<{ type: string; 
 
   for (const block of blocks) {
     if (block.type === "thinking" && block.text) {
-      ctx.thinkingBuffer += block.text;
-      logger.info(`[thinking] received ${block.text.length} chars (total: ${ctx.thinkingBuffer.length})`);
+      ctx.thinkingBuffer.push(block.text);
+      logger.info(`[thinking] received ${block.text.length} chars (total: ${ctx.thinkingBuffer.reduce((s, t) => s + t.length, 0)})`);
       if (!ctx.reasoningStartTime) {
         ctx.reasoningStartTime = Date.now();
-        if (ctx.isCardkitMode) tasks.push(ctx.cardkitCtrl!.updateStatus("💭 思考中..."));
+        if (ctx.isCardkitMode && ctx.cardkitCtrl) tasks.push(ctx.cardkitCtrl.updateStatus("💭 思考中..."));
       }
     }
 
     if (block.type === "text" && block.text) {
-      ctx.textBuffer += block.text;
+      ctx.textBuffer.push(block.text);
       if (ctx.cardkitCtrl) tasks.push(ctx.cardkitCtrl.append(block.text));
       else if (ctx.streamingCard) tasks.push(ctx.streamingCard.append(block.text));
     }
@@ -147,7 +127,7 @@ function processAssistantEvent(ctx: AgentContext, blocks: Array<{ type: string; 
 
       if (ctx.isCardkitMode) {
         logger.tool(block.name, detail);
-        tasks.push(ctx.cardkitCtrl!.updateStatus(`<text_tag color='orange'>${label}</text_tag> \`${detail}\``));
+        tasks.push(ctx.cardkitCtrl?.updateStatus(`<text_tag color='orange'>${label}</text_tag> \`${detail}\``) ?? Promise.resolve());
         ctx.cardkitToolResults.push({ id: block.id, name: block.name, label, detail });
         continue;
       }
@@ -179,7 +159,7 @@ function processUserEvent(ctx: AgentContext, blocks: Array<{ type: string; tool_
         : JSON.stringify(block.content ?? "");
 
       if (ctx.isCardkitMode) {
-        tasks.push(ctx.cardkitCtrl!.clearStatus());
+        if (ctx.cardkitCtrl) tasks.push(ctx.cardkitCtrl.clearStatus());
         const toolEntry = ctx.cardkitToolResults.find(t => t.id === block.tool_use_id);
         if (toolEntry) toolEntry.resultPreview = raw;
         continue;
@@ -198,22 +178,24 @@ function processUserEvent(ctx: AgentContext, blocks: Array<{ type: string; tool_
 
 function processSystemEvent(ctx: AgentContext, event: any): Promise<void>[] {
   const tasks: Promise<void>[] = [];
+  const ctrl = ctx.taskPanelCtrl;
+  if (!ctrl) return tasks;
 
   if (event.subtype === "task_started") {
-    tasks.push(ctx.taskPanelCtrl!.onTaskStarted(event));
+    tasks.push(ctrl.onTaskStarted(event));
   } else if (event.subtype === "task_progress") {
-    tasks.push(ctx.taskPanelCtrl!.onTaskProgress(event));
+    tasks.push(ctrl.onTaskProgress(event));
   } else if (event.subtype === "task_notification") {
-    tasks.push(ctx.taskPanelCtrl!.onTaskNotification(event));
+    tasks.push(ctrl.onTaskNotification(event));
   } else {
     return tasks;
   }
 
   const statusSummary = ctx.taskPanelCtrl?.getStatusSummary();
   if (statusSummary && ctx.isCardkitMode) {
-    tasks.push(ctx.cardkitCtrl!.updateStatus(statusSummary));
+    if (ctx.cardkitCtrl) tasks.push(ctx.cardkitCtrl.updateStatus(statusSummary));
   } else if (!statusSummary && ctx.isCardkitMode && event.subtype === "task_notification") {
-    tasks.push(ctx.cardkitCtrl!.clearStatus());
+    if (ctx.cardkitCtrl) tasks.push(ctx.cardkitCtrl.clearStatus());
   }
 
   return tasks;
@@ -227,7 +209,10 @@ async function processResultEvent(ctx: AgentContext, event: SDKResultEvent): Pro
 
   await ctx.taskPanelCtrl?.completeAll();
 
-  if (!ctx.textBuffer) {
+  const fullText = ctx.textBuffer.join("");
+  const fullThinking = ctx.thinkingBuffer.join("");
+
+  if (!fullText) {
     return;
   }
 
@@ -259,15 +244,15 @@ async function processResultEvent(ctx: AgentContext, event: SDKResultEvent): Pro
   let thinking: string | undefined;
 
   if (thinkingEnabled) {
-    finalContent = ctx.textBuffer;
-    thinking = ctx.thinkingBuffer || undefined;
+    finalContent = fullText;
+    thinking = fullThinking || undefined;
     if (thinking) {
       logger.success(`[thinking] final: ${thinking.length} chars, ${reasoningElapsedMs ? (reasoningElapsedMs / 1000).toFixed(1) + 's' : 'no timing'}`);
     } else {
       logger.dim("[thinking] no thinking blocks received from SDK");
     }
   } else {
-    finalContent = stripThinking(ctx.textBuffer);
+    finalContent = stripThinking(fullText);
   }
 
   // 解析图片
@@ -353,7 +338,7 @@ export async function runAgent(
     : undefined;
 
   // 构建 prompt（支持图片）
-  const promptContent: any[] = [];
+  const promptContent: Array<{ type: string; source?: { type: string; media_type: string; data: string }; text?: string }> = [];
   if (images && images.length > 0) {
     for (const img of images) {
       promptContent.push({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } });
@@ -376,8 +361,8 @@ export async function runAgent(
     config, client, chatId, rootMsgId, replyContext, isCardkitMode,
     streamingCard, cardkitCtrl, taskPanelCtrl,
     startTime: Date.now(),
-    textBuffer: "",
-    thinkingBuffer: "",
+    textBuffer: [],
+    thinkingBuffer: [],
     reasoningStartTime: null,
     toolCallCount: 0,
     toolMsgMap: new Map(),
@@ -388,8 +373,8 @@ export async function runAgent(
     logger.info(logMsg);
     await taskPanelCtrl?.abortAll();
     const abortOptions = {
-      content: ctx.textBuffer || undefined,
-      thinking: ctx.thinkingBuffer || undefined,
+      content: ctx.textBuffer.join("") || undefined,
+      thinking: ctx.thinkingBuffer.join("") || undefined,
       reasoningElapsedMs: ctx.reasoningStartTime ? Date.now() - ctx.reasoningStartTime : undefined,
     };
     if (cardkitCtrl) {
@@ -397,7 +382,7 @@ export async function runAgent(
     } else if (streamingCard) {
       await streamingCard.abort(abortOptions);
     } else {
-      await replyFinalCard(client, chatId, rootMsgId, ctx.textBuffer || "⏹ 任务已中断", replyContext, { cardTitle: config.card_title });
+      await replyFinalCard(client, chatId, rootMsgId, ctx.textBuffer.join("") || "⏹ 任务已中断", replyContext, { cardTitle: config.card_title });
     }
   };
 
@@ -407,7 +392,7 @@ export async function runAgent(
       options: {
         cwd,
         resume: sessionId,
-        permissionMode: config.claude.permission_mode as "acceptEdits",
+        permissionMode: config.claude.permission_mode ?? "acceptEdits",
         allowedTools: config.claude.allowed_tools,
         thinking: config.claude.thinking,
         abortController,

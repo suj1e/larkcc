@@ -8,6 +8,7 @@ import { execSync } from "child_process";
 import { createLarkClient, createWSClient } from "./client/index.js";
 import { LarkccConfig } from "./config.js";
 import { buildStatusCard } from "./card/index.js";
+import { findClaudeBinary } from "./shared/claude-binary.js";
 import { CommandContext } from "./commands.js";
 import { getSession, setSession, getChatId } from "./session.js";
 import { logger } from "./logger.js";
@@ -232,6 +233,7 @@ function ensureClaudeInPath(): void {
         "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
       ];
 
+  // 先尝试带扩展 PATH 的 which/where
   const findCmd = IS_WIN ? "where claude 2>nul" : "which claude 2>/dev/null || command -v claude 2>/dev/null";
   const shellOpt = IS_WIN ? {} : { shell: "/bin/bash" };
 
@@ -250,6 +252,8 @@ function ensureClaudeInPath(): void {
       return;
     }
   } catch {}
+
+  // 扫描常见目录
   for (const dir of commonPaths) {
     const binName = IS_WIN ? "claude.cmd" : "claude";
     if (fs.existsSync(path.join(dir, binName)) || fs.existsSync(path.join(dir, "claude"))) {
@@ -258,6 +262,13 @@ function ensureClaudeInPath(): void {
       return;
     }
   }
+
+  // 最后用共享的 findClaudeBinary 兜底
+  if (findClaudeBinary()) {
+    logger.dim(`claude found: ${findClaudeBinary()}`);
+    return;
+  }
+
   logger.warn("claude CLI not found — make sure it's installed: npm install -g @anthropic-ai/claude-code");
 }
 
@@ -273,9 +284,9 @@ export async function startApp(
   const { app_id, app_secret } = config.feishu;
 
   const commandContext: CommandContext = {
-    customCommands: (config as any).commands ?? {},
-    execCommands: (config as any).exec_commands ?? {},
-    execSecurity: (config as any).exec_security ?? { enabled: true, blacklist: [], confirm_on_warning: true },
+    customCommands: config.commands ?? {},
+    execCommands: config.exec_commands ?? {},
+    execSecurity: config.exec_security ?? { enabled: true, blacklist: [], confirm_on_warning: true },
   };
 
   await checkLock(cwd, profile, force);
@@ -295,7 +306,9 @@ export async function startApp(
     const botInfo = await (client as any).bot.getBotInfo({});
     botOpenId = (botInfo as any).data?.open_id ?? "";
     if (botOpenId) logger.dim(`bot open_id: ${botOpenId}`);
-  } catch {}
+  } catch (e) {
+    logger.dim(`[bot] getBotInfo failed: ${e}`);
+  }
 
   const startupTime = Date.now();
 
@@ -323,13 +336,18 @@ export async function startApp(
     commandContext,
   });
 
-  wsClient.start({
-    eventDispatcher: new lark.EventDispatcher({}).register({
-      "im.message.receive_v1": handler,
-      "im.message.reaction.created_v1": () => {},
-      "im.message.reaction.deleted_v1": () => {},
-    }),
-  });
+  try {
+    wsClient.start({
+      eventDispatcher: new lark.EventDispatcher({}).register({
+        "im.message.receive_v1": handler,
+        "im.message.reaction.created_v1": () => {},
+        "im.message.reaction.deleted_v1": () => {},
+      }),
+    });
+  } catch (e) {
+    logger.error(`WebSocket connection failed: ${e}`);
+    process.exit(1);
+  }
 
   logger.success("Feishu connected! Waiting for messages...");
   logger.dim("Press Ctrl+C to stop\n");
@@ -400,6 +418,6 @@ export async function startApp(
     process.exit(0);
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown().catch(console.error));
+  process.on("SIGTERM", () => void shutdown().catch(console.error));
 }

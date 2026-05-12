@@ -6,6 +6,7 @@ import type { CardBuildOptions } from "../card/index.js";
 import { getTenantAccessToken, checkTokenExpiry, replyMessage, patchMessage, sendMessage } from "./lark.js";
 import { createAndRegisterOverflowDoc, cleanupOldDocuments } from "./document.js";
 import type { DocumentMeta } from "../format/index.js";
+import { TOOL_STATUS_WORDS } from "../shared/tool-labels.js";
 
 // ── 共享类型 ──────────────────────────────────────────────────
 
@@ -400,16 +401,6 @@ async function replyWithDocument(
 }
 
 // ── 工具卡片 ─────────────────────────────────────────────────
-
-const TOOL_STATUS_WORDS: Record<string, string[]> = {
-  Read:  ["📖 Reading...", "📖 Scanning..."],
-  Write: ["📝 Writing...", "📝 Creating..."],
-  Edit:  ["✏️ Editing...", "✏️ Modifying..."],
-  Bash:  ["⚡ Running...", "⚡ Executing..."],
-  Glob:  ["📂 Finding files...", "📂 Scanning..."],
-  Grep:  ["🔍 Searching...", "🔍 Analyzing..."],
-  LS:    ["📁 Listing...", "📁 Browsing..."],
-};
 
 export async function sendToolCard(
   client: lark.Client,

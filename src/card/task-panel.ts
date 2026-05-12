@@ -9,6 +9,7 @@ import { buildCard } from "./compose.js";
 import { markdown } from "./elements.js";
 import { buildHeader } from "./header.js";
 import { TASK_SUMMARY_TRUNCATE } from "./containers.js";
+import { TOOL_DISPLAY } from "../shared/tool-labels.js";
 
 export type TaskPanelStatus = "running" | "completed" | "failed" | "stopped";
 
@@ -28,12 +29,6 @@ const STATUS_TEMPLATE: Record<TaskPanelStatus, { color: string; icon: string; la
   completed: { color: "green",    icon: "✅", label: "Completed" },
   failed:   { color: "red",      icon: "❌", label: "Failed" },
   stopped:  { color: "grey",     icon: "⏹",  label: "Stopped" },
-};
-
-const TOOL_DISPLAY: Record<string, string> = {
-  Read: "📂 Read", Write: "📝 Write", Edit: "✏️ Edit",
-  Bash: "⚡ Bash", Glob: "📂 Glob", Grep: "🔍 Grep",
-  LS: "📁 LS",
 };
 
 function fmtDur(sec: number): string {

@@ -31,6 +31,9 @@ export interface MessageHandlerContext {
 export function createMessageHandler(ctx: MessageHandlerContext) {
   const { client, config, profile, cwd, botOpenId, startupTime, commandContext } = ctx;
 
+  const DEDUPE_WINDOW_MS = 30_000;
+  const EXEC_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+
   let processing = false;
   let processingStartedAt = 0;
   let currentAbortController: AbortController | null = null;
@@ -44,13 +47,14 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
   const profileLabel = profile ? ` [${profile}]` : "";
 
   return async (data: any) => {
+    if (!data?.message || !data?.sender) return;
     const msg      = data.message;
     const senderId = data.sender.sender_id?.open_id ?? "";
     const isGroup  = msg.chat_type === "group";
 
     if (!["text", "post", "image", "file"].includes(msg.message_type)) return;
 
-    const msgTimestamp = Number(msg.create_time);
+    const msgTimestamp = Number(msg.create_time) || 0;
     const now = Date.now();
     if (msgTimestamp < startupTime) {
       logger.dim(`skipped pre-startup message (${Math.round((now - msgTimestamp) / 1000)}s ago)`);
@@ -70,10 +74,10 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
     // 去重
     const dedupeKey = `${senderId}:${msg.message_id}`;
     const lastSeen  = recentMessages.get(dedupeKey);
-    if (lastSeen && now - lastSeen < 30_000) return;
+    if (lastSeen && now - lastSeen < DEDUPE_WINDOW_MS) return;
     recentMessages.set(dedupeKey, now);
     for (const [k, t] of recentMessages) {
-      if (now - t > 30_000) recentMessages.delete(k);
+      if (now - t > DEDUPE_WINDOW_MS) recentMessages.delete(k);
     }
 
     // Owner 检测
@@ -104,10 +108,13 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
     const profileKey = profile ?? "default";
 
     if (msg.message_type === "text") {
-      const raw = stripHtml((JSON.parse(msg.content) as { text?: string }).text ?? "");
+      let parsed: { text?: string };
+      try { parsed = JSON.parse(msg.content); } catch { return; }
+      const raw = stripHtml(parsed.text ?? "");
       text = isGroup ? stripMentions(raw) : raw;
     } else if (msg.message_type === "post") {
-      const raw  = JSON.parse(msg.content);
+      let raw: any;
+      try { raw = JSON.parse(msg.content); } catch { return; }
       const post = raw.zh_cn ?? raw;
       const title  = stripHtml(post.title ?? "");
       const blocks: Array<Array<{ tag: string; text?: string; image_key?: string }>> = post.content ?? [];
@@ -123,15 +130,21 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
         for (const el of line) {
           if (el.tag === "img" && el.image_key) {
             logger.dim(`downloading image from post: ${el.image_key}`);
-            const img = await downloadImage(client, msg.message_id, el.image_key);
-            if (img) {
-              images.push(img);
+            try {
+              const img = await downloadImage(client, msg.message_id, el.image_key);
+              if (img) {
+                images.push(img);
+              }
+            } catch (e) {
+              logger.warn(`failed to download image from post: ${el.image_key}`);
             }
           }
         }
       }
     } else if (msg.message_type === "image") {
-      const imageKey = (JSON.parse(msg.content) as { image_key?: string }).image_key;
+      let parsed: { image_key?: string };
+      try { parsed = JSON.parse(msg.content); } catch { return; }
+      const imageKey = parsed.image_key;
       if (imageKey) {
         logger.dim(`downloading image: ${imageKey}`);
         const img = await downloadImage(client, msg.message_id, imageKey);
@@ -149,11 +162,8 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
         return;
       }
 
-      const fileContent = JSON.parse(msg.content) as {
-        file_key?: string;
-        file_name?: string;
-        file_size?: number;
-      };
+      let fileContent: { file_key?: string; file_name?: string; file_size?: number };
+      try { fileContent = JSON.parse(msg.content); } catch { return; }
       const fileKey = fileContent.file_key;
       const fileName = fileContent.file_name ?? "unknown";
       const fileSize = fileContent.file_size ?? 0;
@@ -225,7 +235,7 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
 
     // ── EXEC 命令确认处理 ──────────────────────────────────
     const pendingExec = pendingExecConfirm.get(chatId);
-    if (pendingExec && Date.now() - pendingExec.timestamp < 5 * 60 * 1000) {
+    if (pendingExec && Date.now() - pendingExec.timestamp < EXEC_CONFIRM_TIMEOUT_MS) {
       const reply = text.toLowerCase().trim();
       if (reply === "y" || reply === "yes" || reply === "确认") {
         pendingExecConfirm.delete(chatId);
@@ -241,7 +251,7 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
     }
 
     for (const [key, value] of pendingExecConfirm.entries()) {
-      if (Date.now() - value.timestamp > 5 * 60 * 1000) {
+      if (Date.now() - value.timestamp > EXEC_CONFIRM_TIMEOUT_MS) {
         pendingExecConfirm.delete(key);
       }
     }
@@ -361,7 +371,9 @@ export function createMessageHandler(ctx: MessageHandlerContext) {
         data: { reaction_type: { emoji_type: config.reaction?.processing ?? "Typing" } },
       });
       reactionId = reactionRes.data?.reaction_id;
-    } catch {}
+    } catch (e) {
+      logger.dim(`[reaction] create failed: ${e}`);
+    }
 
     try {
       let finalPrompt = text;

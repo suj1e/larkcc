@@ -211,7 +211,7 @@ if (opts.killAll) {
 // cleanup temp files
 if (opts.cleanupTmpFiles) {
   const baseTempDir = path.join(os.homedir(), ".larkcc", "temp");
-  const olderThanHours = parseFloat(opts.olderThan) || 0;
+  const olderThanHours = Math.max(0, parseFloat(opts.olderThan) || 0);
   const olderThanMs = olderThanHours * 60 * 60 * 1000;
   const cutoffTime = Date.now() - olderThanMs;
 

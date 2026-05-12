@@ -16,6 +16,7 @@
 
 import { extractCodeBlocks, restoreCodeBlocks } from "../format/card-optimize.js";
 import { fetchWithProxy } from "./lark.js";
+import { detectImageType } from "../shared/image-type.js";
 
 // ── 常量 ───────────────────────────────────────────────────
 
@@ -184,13 +185,7 @@ async function downloadExternalImage(url: string): Promise<Buffer | null> {
 async function uploadImageToFeishu(buffer: Buffer, token: string): Promise<string | null> {
   try {
     // 检测图片类型
-    const header = buffer.slice(0, 4).toString("hex");
-    let mediaType = "image/jpeg";
-    let ext = "jpg";
-    if (header.startsWith("89504e47")) { mediaType = "image/png"; ext = "png"; }
-    else if (header.startsWith("47494638")) { mediaType = "image/gif"; ext = "gif"; }
-    else if (header.startsWith("52494646")) { mediaType = "image/webp"; ext = "webp"; }
-    else if (header.startsWith("00000100")) { mediaType = "image/ico"; ext = "ico"; }
+    const { mediaType, ext } = detectImageType(buffer);
 
     const formData = new FormData();
     formData.append("image_type", "message");
