@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-12
+
+### Changed
+
+- Extract shared utilities to `src/shared/`: `claude-binary`, `tool-labels`, `image-type` — eliminate code duplication across modules
+- Replace string concatenation with `string[]` for text/thinking buffers in agent loop
+- Replace polling-based card creation with Promise-based approach in CardKit controller
+- Tighten types: replace `any` with proper types across config, cardkit, claude modules
+- Add null safety for `getReadableStream` calls in download module
+- Include `appId` in token cache to prevent cross-profile token reuse
+
+### Fixed
+
+- Add try/catch for all `JSON.parse` calls in message handler
+- Add buffer truncation in flush controller to prevent unbounded memory growth
+- Fix async signal handler (`SIGINT`/`SIGTERM`) to properly catch errors
+- Add error logging for WebSocket connection and bot info fetch failures
+
 ## [0.12.7] - 2026-05-10
 
 ### Changed

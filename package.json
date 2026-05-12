@@ -1,6 +1,6 @@
 {
   "name": "larkcc",
-  "version": "0.12.7",
+  "version": "0.13.0",
   "description": "Claude Code in Feishu/Lark - AI coding assistant bot",
   "author": "sujie <13156660820@163.com>",
   "license": "MIT",
